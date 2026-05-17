@@ -1,0 +1,23 @@
+==================================================================
+EVIDENCE INTEGRITY VERIFICATION
+Verification run: 2026-05-17T11:27:56Z UTC
+==================================================================
+
+--- BASELINE (captured before LIVE run, from committed file) ---
+
+--- SHA-256 ---
+7a722864dc4b2c785a2de6c75a7dc3a09ab8c72a824156dd6dd932df22ea64fc  /mnt/c/Users/gonsa/mcp-security-lab/evidence/mcp_protocol_evidence.log
+958ec63ae0b34d40ff8adcc31cb10e36fc610095a10dafa107d8dd27f1b333c1  /mnt/c/Users/gonsa/mcp-security-lab/evidence/ollmcp_attack_capture.log
+
+--- Stat (size + mtime) ---
+
+--- CURRENT (recomputed now, after LIVE run) ---
+
+7a722864dc4b2c785a2de6c75a7dc3a09ab8c72a824156dd6dd932df22ea64fc  /mnt/c/Users/gonsa/mcp-security-lab/evidence/mcp_protocol_evidence.log
+958ec63ae0b34d40ff8adcc31cb10e36fc610095a10dafa107d8dd27f1b333c1  /mnt/c/Users/gonsa/mcp-security-lab/evidence/ollmcp_attack_capture.log
+
+--- VERDICT ---
+
+MATCH — source evidence is byte-identical to the pre-run baseline.
+Chain of custody intact. The forwarder did not modify source evidence.
+==================================================================

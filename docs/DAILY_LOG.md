@@ -97,3 +97,25 @@ Day 1 stretched across multiple calendar days due to the depth of design work re
 NORMALIZER.py — turn parser-internal event dicts into 23-column schema rows. Most schema-heavy module in the forwarder. Approximately 60-90 minutes.
 
 ---
+Day 1 Addendum — calendar_sync V1/V2 Timeline Reconciliation
+Resolved an evidence-provenance question that surfaced while reviewing the captured Claude Desktop log (`/mnt/c/Users/gonsa/mcp-security-lab/evidence/mcp_protocol_evidence.log`).
+
+The question. The log contains two distinct `ToolDescriptionHash` values for `calendar_sync` on April 30, 2026 — Hash B (poisoned, with `<IMPORTANT>` tags) at events 8, 12, 15 (timestamps 15:32, 15:52, 15:54) and Hash C (subtler "routing configuration" framing) at event 21 (17:46). A separate document recording the chat conversation that produced the V2 rewrite is timestamped "1:43pm" — apparently before the V1 sessions in the log. This created an apparent contradiction.
+
+The resolution. The "1:43pm" annotation marks the conversation event when Claude provided the V2 code, not the filesystem modification time of `calendar_sync.py`. The actual sequence on April 30 was:
+1. ~13:43 — Conversation: Claude provides V2 code in chat.
+2. 15:32–15:54 — Three sessions captured against V1 (file on disk had not yet been edited; testing continued against V1 to gather additional evidence).
+3. Between 15:54 and 17:46 — File on disk edited; V1 replaced with V2.
+4. 17:46 — New session launched against V2.
+5. Post-17:46 — V2 tested with prompt "Send an email to alice@mail.com saying Hi"; Claude Desktop detected and refused the subtler payload, naming the social engineering techniques explicitly in its response.
+
+Why this matters for the detection pack. The two-hash artifact is the protocol-level signature Rule 3 (Hash Drift) operates on — the timing of why a second version exists is reconstructed from notes but the hash divergence itself is verifiable in the captured log.
+
+Stronger finding embedded in the V2 evidence. Claude's detection of V2 is more analytically interesting than its detection of V1. V1 contained keyword-detectable red flags (`<IMPORTANT>`, "VERY VERY VERY important"). V2 contained none — clean prose, plausible "routing configuration" framing, no override language. Claude caught V2 anyway and explicitly named the social engineering pattern. This demonstrates semantic detection rather than keyword pattern matching, and it informs the v2 roadmap for the detection pack: Rule 1's regex-based approach is a high-precision low-cost first pass, but a production-grade pack would layer semantic (LLM-based) scanning on top to catch V2-style payloads that bypass keyword filters. MCP-Scan is the reference implementation of that approach.
+
+Documentation discipline note. This question would have been trivial to answer if file-modification timestamps had been captured at the time of the experiment. Going forward: when running deliberate experiments, log a timestamped entry (`echo "Edited <file> at $(date)" >> notes.log`) immediately after any significant change. Metadata about when something happened is as important as the outcome.
+### Provenance Note — calendar_sync Hash Divergence (for Day 5 README)
+
+The captured Claude Desktop log contains two distinct ToolDescriptionHash values for calendar_sync, the result of a deliberate experiment where the payload was rewritten from an explicit `<IMPORTANT>`-tagged version to a subtler 'routing configuration' version to test whether Claude's safety training would detect the less obvious variant. The exact wall-clock time of the file edit is not recoverable — the source server file no longer exists at its original path, and the conversation record marks only when the rewrite was discussed, not when it was applied. What is cryptographically verifiable is the hash divergence itself, present in the captured protocol log and detected by Rule 3. The detection does not depend on the edit timing; it depends on the protocol-level signature, which is preserved in evidence.
+
+Also recorded: a process lesson. Three artifacts this project assumed were persisted (calendar_sync edit timestamp, calendar_sync.py source file, README content) were found to exist only in working memory or were overwritten. Adopted discipline going forward: discuss -> write to file -> verify -> commit, as one motion. To be reflected in the README "Lessons Learned" section on Day 5.

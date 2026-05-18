@@ -166,3 +166,40 @@ payload; transform self-reference patch) were each falsified by evidence
 before this root cause was confirmed from primary documentation. No
 speculative deploys — fix to be designed against full grep of every
 TimeGenerated occurrence in the forwarder before implementation.
+
+### Fact 2 result — transform-only fix eliminated; coordinated rename confirmed
+
+Queried RawEvent across all event types (SessionStart, SessionEnd,
+ToolCallInvoked) in both ingested batches. RESULT: no event type's
+RawEvent contains a timestamp field — only server/tool_name, line_num,
+and (for ToolCallInvoked) parameters. The parser extracts the log-line
+timestamp into the internal event dict but does NOT preserve it in
+RawEvent.
+
+Consequence: a DCR-transform-only fix (extract time from RawEvent) is
+IMPOSSIBLE, not merely riskier — there is no timestamp in RawEvent to
+extract. The coordinated forwarder+DCR rename is the only correct fix.
+
+CONFIRMED FIX SCOPE (ready to implement next session):
+  Forwarder rename TimeGenerated -> EventTime, six source lines:
+    NORMALIZER.py: 27 (SCHEMA_COLUMNS), 60 (_empty_row), 158 (ollmcp
+      now() path), 181 (Claude event-time path), 296 (validate_row required)
+    INGESTION_CLIENT.py: 150 (verify_connection probe row — must match new
+      stream declaration or probe is rejected and forwarder fails at startup)
+  Leave alone: DEAD_LETTER.py 171/181 (smoke-test fixture, not in ingestion
+    path; Day-5 cosmetic cleanup only)
+  DCR (dcr.bicep): streamDeclarations declare EventTime (not TimeGenerated)
+    as inbound column; transformKql:
+      source | extend TimeGenerated = todatetime(EventTime) | project-away EventTime
+  Deployment ordering dependency exists (DCR vs forwarder first) — to be
+    specified explicitly when the fix is implemented; wrong order rejects
+    all rows mid-migration.
+
+Separate Day-5 schema note (not tonight): RawEvent does not preserve the
+original raw log line/timestamp for Claude events despite schema doc
+stating RawEvent has "audit, debugging, replay value." Schema-fidelity
+gap for known-limitations section, not part of this fix.
+
+STATUS: bug not fixed; root cause and full fix design confirmed and
+recorded. Next session = implement the above as one reviewed coordinated
+change with explicit deployment ordering. No further diagnosis needed.

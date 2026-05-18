@@ -119,3 +119,18 @@ Documentation discipline note. This question would have been trivial to answer i
 The captured Claude Desktop log contains two distinct ToolDescriptionHash values for calendar_sync, the result of a deliberate experiment where the payload was rewritten from an explicit `<IMPORTANT>`-tagged version to a subtler 'routing configuration' version to test whether Claude's safety training would detect the less obvious variant. The exact wall-clock time of the file edit is not recoverable — the source server file no longer exists at its original path, and the conversation record marks only when the rewrite was discussed, not when it was applied. What is cryptographically verifiable is the hash divergence itself, present in the captured protocol log and detected by Rule 3. The detection does not depend on the edit timing; it depends on the protocol-level signature, which is preserved in evidence.
 
 Also recorded: a process lesson. Three artifacts this project assumed were persisted (calendar_sync edit timestamp, calendar_sync.py source file, README content) were found to exist only in working memory or were overwritten. Adopted discipline going forward: discuss -> write to file -> verify -> commit, as one motion. To be reflected in the README "Lessons Learned" section on Day 5.
+
+### DCR timestamp fix — batch boundary (Day 2 continued)
+
+Pre-fix batch: ingested ~2026-05-17T10:47Z. TimeGenerated = ingestion time
+(constant ~4s delta from ingestion_time()) — demonstrates the wizard-DCR
+binding bug. Retained deliberately as the documented before-state.
+
+DCR fixed via infra/dcr.bicep deployed 2026-05-18T14:46Z
+(transformKql: source -> source | extend TimeGenerated = todatetime(TimeGenerated)),
+independently confirmed by reading dataFlows[0].transformKql back from Azure.
+
+Post-fix batch: re-run forwarder after deploy; isolate in queries with
+IngestedAt > (re-run time). Expected EarliestEvent = 2026-04-30 (Claude
+real event time), proving the fix by the same four-signal query that
+caught the bug. Two batches coexist intentionally; separable by ingestion_time().

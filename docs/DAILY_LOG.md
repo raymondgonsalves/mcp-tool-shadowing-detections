@@ -134,3 +134,35 @@ Post-fix batch: re-run forwarder after deploy; isolate in queries with
 IngestedAt > (re-run time). Expected EarliestEvent = 2026-04-30 (Claude
 real event time), proving the fix by the same four-signal query that
 caught the bug. Two batches coexist intentionally; separable by ingestion_time().
+
+### ROOT CAUSE CONFIRMED — TimeGenerated reserved-column collision
+
+Symptom: ingested rows show TimeGenerated = ingestion time, not the real
+MCP event time, despite the forwarder provably sending correct ISO-8601
+event timestamps (verified at parser, normalizer, enricher, and pre-upload
+payload layers).
+
+Root cause (confirmed against Microsoft Learn tutorial "Send data to Azure
+Monitor Logs with Logs ingestion API"): TimeGenerated is a RESERVED column.
+When the inbound JSON payload contains a field literally named
+TimeGenerated, the Logs Ingestion pipeline does not bind it as data — it
+reserves that name for its own ingestion-time value. The DCR transform
+"source | extend TimeGenerated = todatetime(TimeGenerated)" therefore reads
+the already-substituted ingestion value and assigns it to itself: a no-op.
+This is why deploy #1 (transform fix) succeeded but changed nothing.
+
+Microsoft's documented pattern: the inbound field must use a NON-reserved
+name (their sample uses "Time"); the DCR transform creates TimeGenerated
+from it: source | extend TimeGenerated = todatetime(Time).
+
+Correct fix is a COORDINATED two-artifact change:
+  1. Forwarder: emit "EventTime" instead of "TimeGenerated"
+  2. DCR streamDeclarations: declare EventTime (inbound), not TimeGenerated
+  3. DCR transform: source | extend TimeGenerated = todatetime(EventTime)
+                           | project-away EventTime
+
+Three prior mechanism hypotheses (wizard transform overwrite; malformed
+payload; transform self-reference patch) were each falsified by evidence
+before this root cause was confirmed from primary documentation. No
+speculative deploys — fix to be designed against full grep of every
+TimeGenerated occurrence in the forwarder before implementation.

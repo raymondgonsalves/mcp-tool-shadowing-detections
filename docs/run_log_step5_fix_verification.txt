@@ -41,3 +41,25 @@ Forwarder commit:  5d84b22
 [CONFIG] Dead-letter queue: /home/gonsalvr/dev/mcp-tool-shadowing-detections/failed-events
 ==================================================================
 Run finished UTC:  2026-05-19T09:40:00Z
+
+================================================================
+PROVENANCE ANNOTATION (appended 2026-05-19; original above unaltered)
+----------------------------------------------------------------
+The "DCR deployed at:" header line in this log is GARBLED — the
+$(az deployment group show) substitution failed and produced a
+blank/mangled value. This is a cosmetic logging defect, not a data
+defect.
+
+AUTHORITATIVE VALUES (pulled from Azure deployment record on
+2026-05-19, not transcribed from memory):
+  - Run timestamp: use the machine-generated "Run started UTC" line
+    in the body above — that value is correct and authoritative.
+  - DCR deploy this run verified against: deployment
+    "dcr-timestamp-fix-v2", properties.timestamp =
+    2026-05-19T09:14:17.168726+00:00
+
+This run was the Rev2 verification (result: TimeGenerated showed
+ingestion time — the wrong-layer fix, later superseded by Rev3c).
+Correction appended, original NOT rewritten, per evidence-integrity
+discipline (an edited evidence file is no longer evidence).
+================================================================

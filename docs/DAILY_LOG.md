@@ -252,3 +252,64 @@ schema FIRST, then DCR — Microsoft Learn). 4-step plan:
   4. Verify EventTime column = 2026-04-30 for Claude rows.
 Stopped at a clean pre-Step-1 gate deliberately (no half-applied schema change
 left unverified across the break).
+
+### RESOLVED — Rev3c EventTime pass-through, bug CLOSED (verified 2026-05-19)
+
+The TimeGenerated investigation is closed. Root cause confirmed and fix
+verified against data.
+
+ROOT CAUSE (Microsoft-confirmed; commit 1106b01):
+For a wizard-created DataCollectionRuleBased custom _CL table, the
+TimeGenerated column is bound to INGESTION-TIME at the table-schema
+layer, overriding any DCR transform output. Confirmed from Microsoft
+documentation, which states that for these tables TimeGenerated "is
+used to identify the ingestion time of the record" and "if the column
+is missing, it's automatically added to the transformation in your DCR
+for the table":
+  - https://learn.microsoft.com/en-us/azure/azure-monitor/logs/create-custom-table
+  - https://github.com/MicrosoftDocs/azure-monitor-docs/blob/main/articles/azure-monitor/logs/create-custom-table.md
+All four initial fixes operated on the DCR transform layer — the wrong
+layer. The transform was never the problem.
+
+THE FIX (commit 2d03fef):
+- Table: added EventTime (datetime) column to MCPProtocolLogs_CL schema
+  (24 cols total; az table update REPLACES the column set — all existing
+  columns must be re-supplied or dropped). Verified 24 cols post-change.
+- DCR transform (Rev3c): source | extend TimeGenerated = todatetime(EventTime)
+  Creates the mandatory TimeGenerated output (ingestion-time, accepted by
+  design). EventTime is NOT referenced on the left side, so per documented
+  Azure Monitor transformation pass-through behavior it flows unmodified
+  from source into the EventTime table column. Pass-through behavior per:
+  - https://learn.microsoft.com/en-us/azure/azure-monitor/data-collection/data-collection-transformations-create
+- Forwarder: zero change (already emitted EventTime since commit 5d84b22).
+
+VERIFICATION (Step 4 four-signal query, ingestion-bounded):
+- EarliestEventTime = 2026-04-30 15:32:18.594 for Claude rows — the real
+  parsed mcp.log event time survived ingestion. PROOF.
+- TimeGenerated = 2026-05-19 ingestion time — CORRECT BY DESIGN, not a bug.
+- ollmcp rows carry now() fallback in EventTime (no per-event timestamps in
+  ollmcp source) — intentional, mixed-source model preserved.
+- 28/28 rows, bound correctly isolated the run.
+
+ITERATION TRAIL (why this took six attempts):
+1-4. DCR-layer fixes (hardcoded-transform, payload-malformation, Rev1
+     self-reference no-op, Rev2 coordinated rename) — all failed identically
+     because the binding is at the table-schema layer, never inspected until
+     the breakthrough.
+5. Rev3 (source | extend EventTime = todatetime(EventTime)) — deploy REJECTED:
+   InvalidTransformQuery, transform output must contain TimeGenerated.
+6. Rev3b (added TimeGenerated but self-referential EventTime=todatetime(
+   EventTime)) — deployed, but EventTime stored NULL: self-referential cast
+   of a stream column to itself nulls the value.
+7. Rev3c (drop the self-reference; let EventTime pass through) — VERIFIED.
+
+PROCESS LESSON: authoritative Microsoft documentation should have been
+searched thoroughly after failure #1, not #4. Verification discipline
+(four-signal query, independent ground-truth reads, chain-of-custody) was
+sound throughout; the layer hypothesis was wrong four times. The honest
+six-iteration record is retained deliberately as evidence of root-cause
+rigor — the failure trail IS the artifact, now that the bug is closed.
+
+STATUS: CLOSED. Forwarder -> Sentinel pipeline operational. EventTime holds
+true event time; TimeGenerated is ingestion-time by design. Detection rules
+(Day 3+) MUST use EventTime for event-time logic.

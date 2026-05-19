@@ -1,0 +1,44 @@
+=== Step 3 — Live forwarder run (post DCR Revision 3b deploy) ===
+Run started LOCAL: 2026-05-19 09:20:13 EDT
+Run started UTC:   2026-05-19T13:20:13Z
+DCR deployed at:   2026-05-19T13:15:26.875429+00:00 (dcr-eventtime-fix-v3b)
+Forwarder commit:  f22e8d5
+Transform:         source | extend TimeGenerated = todatetime(EventTime), EventTime = todatetime(EventTime)
+==================================================================
+2026-05-19 09:20:13,435 main INFO Starting forwarder (LIVE RUN)...
+2026-05-19 09:20:13,438 ingestion_client INFO Running connection verification probe...
+2026-05-19 09:20:13,525 ingestion_client INFO Constructed LogsIngestionClient (endpoint=https://dce-mcp-detection-lab-prj9.eastus-1.ingest.monitor.azure.com)
+2026-05-19 09:20:14,144 ingestion_client INFO Uploaded batch of 1 rows
+2026-05-19 09:20:14,144 ingestion_client INFO Verification probe succeeded — auth and DCR wiring confirmed.
+2026-05-19 09:20:14,144 main INFO Processing source: /mnt/c/Users/gonsa/mcp-security-lab/evidence/mcp_protocol_evidence.log (parser=claude_desktop, host=ClaudeDesktop)
+2026-05-19 09:20:14,168 main INFO Processing source: /mnt/c/Users/gonsa/mcp-security-lab/evidence/ollmcp_attack_capture.log (parser=ollmcp, host=ollmcp)
+2026-05-19 09:20:14,330 ingestion_client INFO Uploaded batch of 28 rows
+2026-05-19 09:20:14,330 main INFO ============================================================
+2026-05-19 09:20:14,330 main INFO FORWARDER RUN SUMMARY — LIVE RUN
+2026-05-19 09:20:14,330 main INFO ============================================================
+2026-05-19 09:20:14,330 main INFO Rows processed:        28
+2026-05-19 09:20:14,330 main INFO Rows uploaded:         28
+2026-05-19 09:20:14,330 main INFO Rows dead-lettered:    0
+2026-05-19 09:20:14,330 main INFO Batches uploaded OK:   1
+2026-05-19 09:20:14,330 main INFO Batches failed:        0
+2026-05-19 09:20:14,330 main INFO Distinct tool-desc hashes: 3
+2026-05-19 09:20:14,330 main INFO     cb006818569a05e3...  x4
+2026-05-19 09:20:14,330 main INFO     44c65aee45b061d1...  x3
+2026-05-19 09:20:14,330 main INFO     730af110b70716da...  x1
+2026-05-19 09:20:14,330 main INFO Event type breakdown:
+2026-05-19 09:20:14,330 main INFO     SessionStart           x10
+2026-05-19 09:20:14,330 main INFO     ToolDescriptionLoaded  x8
+2026-05-19 09:20:14,330 main INFO     ToolCallInvoked        x6
+2026-05-19 09:20:14,330 main INFO     SessionEnd             x2
+2026-05-19 09:20:14,330 main INFO     ToolResultReturned     x2
+2026-05-19 09:20:14,330 main INFO Elapsed: 0.89s
+2026-05-19 09:20:14,330 main INFO ============================================================
+[CONFIG] Configuration loaded successfully.
+[CONFIG] Loaded 2 log sources.
+[CONFIG] Schema version: 1.1
+[CONFIG] DCE URL: https://dce-mcp-detection-lab-prj9.eastus-1.ingest.monitor.azure.com
+[CONFIG] DCR Immutable ID: dcr-7366f726a9cf4162aa9be8c10a4bd8cd
+[CONFIG] Stream name: Custom-MCPProtocolLogs_CL
+[CONFIG] Dead-letter queue: /home/gonsalvr/dev/mcp-tool-shadowing-detections/failed-events
+==================================================================
+Run finished UTC:  2026-05-19T13:20:14Z

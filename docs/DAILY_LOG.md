@@ -313,3 +313,17 @@ rigor — the failure trail IS the artifact, now that the bug is closed.
 STATUS: CLOSED. Forwarder -> Sentinel pipeline operational. EventTime holds
 true event time; TimeGenerated is ingestion-time by design. Detection rules
 (Day 3+) MUST use EventTime for event-time logic.
+
+### DEFERRED TO DAY 5 (tracked obligation)
+
+- Produce Schema_Document_v1-2.docx as a NEW versioned file (do NOT edit
+  v1-1 in place — a file named v1-1 containing v1.2 content is a
+  mislabeled-artifact integrity problem, same class as a mislabeled
+  evidence file). v1.2 must: add the EventTime column to the column
+  table; add a section documenting the wire-vs-stored timestamp design
+  and why TimeGenerated is ingestion-time by design; bump the internal
+  version header to 1.2; add a cross-reference to docs/SCHEMA_NOTES.md
+  and to the precedence rule therein. Until v1.2 exists, the .docx
+  documents the stale 23-col pre-EventTime schema and
+  docs/SCHEMA_NOTES.md + the live table are authoritative. Documentation
+  is NOT "done" at Day 5 until Schema_Document_v1-2.docx exists.

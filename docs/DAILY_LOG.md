@@ -239,3 +239,16 @@ thoroughly after failure #1, not #4. The verification discipline was sound;
 the layer hypothesis was wrong four times. Recorded honestly.
 
 STATUS: mechanism CONFIRMED. Fix scoped pending table-schema inspection.
+
+### RESUME POINT (paused 2026-05-19 ~06:44 EDT, resume ~09:00)
+Breakthrough committed (1106b01). Fix scoped, ordering documented (table
+schema FIRST, then DCR — Microsoft Learn). 4-step plan:
+  1. az table update: add EventTime=datetime + all 23 existing cols (24 total,
+     exclude TenantId/standardColumns). Command reviewed against table show.
+  2. DCR Revision 3: transform = source | extend EventTime = todatetime(EventTime)
+     (remove project-away EventTime; leave TimeGenerated untouched — it stays
+     ingestion-time BY DESIGN for DataCollectionRuleBased tables).
+  3. Forwarder run (zero code change — already sends EventTime, commit 5d84b22).
+  4. Verify EventTime column = 2026-04-30 for Claude rows.
+Stopped at a clean pre-Step-1 gate deliberately (no half-applied schema change
+left unverified across the break).

@@ -3,3 +3,9 @@
 __pycache__/
 *.pyc
 failed-events/
+
+# Bicep build output — regenerated from dcr.bicep by `az bicep build`
+infra/dcr.compiled.json
+
+# Diagnostic capture of live DCR state — point-in-time snapshot, not source
+infra/dcr_current_raw.json

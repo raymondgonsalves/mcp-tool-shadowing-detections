@@ -1,0 +1,29 @@
+=== Evidence integrity baseline ===
+Captured: 2026-05-17T09:36:27Z UTC
+
+--- MD5 ---
+344a870df72d1f70400b014b1a4ddb3e  /mnt/c/Users/gonsa/mcp-security-lab/evidence/mcp_protocol_evidence.log
+57fbbe91b77d2691f873c4e5801d314c  /mnt/c/Users/gonsa/mcp-security-lab/evidence/ollmcp_attack_capture.log
+
+--- SHA-256 ---
+7a722864dc4b2c785a2de6c75a7dc3a09ab8c72a824156dd6dd932df22ea64fc  /mnt/c/Users/gonsa/mcp-security-lab/evidence/mcp_protocol_evidence.log
+958ec63ae0b34d40ff8adcc31cb10e36fc610095a10dafa107d8dd27f1b333c1  /mnt/c/Users/gonsa/mcp-security-lab/evidence/ollmcp_attack_capture.log
+
+--- Stat (size + mtime) ---
+  File: /mnt/c/Users/gonsa/mcp-security-lab/evidence/mcp_protocol_evidence.log
+  Size: 37079     	Blocks: 80         IO Block: 4096   regular file
+Device: 0,68	Inode: 32369622321874930  Links: 1
+Access: (0777/-rwxrwxrwx)  Uid: ( 1000/gonsalvr)   Gid: ( 1000/gonsalvr)
+Access: 2026-05-14 06:12:41.593194500 -0400
+Modify: 2026-04-30 13:47:56.707552900 -0400
+Change: 2026-05-14 15:35:50.722905900 -0400
+ Birth: -
+
+  File: /mnt/c/Users/gonsa/mcp-security-lab/evidence/ollmcp_attack_capture.log
+  Size: 4242      	Blocks: 16         IO Block: 4096   regular file
+Device: 0,68	Inode: 270497452618942341  Links: 1
+Access: (0777/-rwxrwxrwx)  Uid: ( 1000/gonsalvr)   Gid: ( 1000/gonsalvr)
+Access: 2026-05-14 12:39:44.006036400 -0400
+Modify: 2026-05-14 11:05:03.303600000 -0400
+Change: 2026-05-14 12:38:12.596544300 -0400
+ Birth: -

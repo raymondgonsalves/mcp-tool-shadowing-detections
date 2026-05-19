@@ -147,7 +147,7 @@ def verify_connection() -> bool:
     the return value tells us the POST itself succeeded.
     """
     test_row = {
-        "TimeGenerated": datetime.now(timezone.utc).isoformat(),
+        "EventTime": datetime.now(timezone.utc).isoformat(),
         "EventType": "SessionStart",
         "SessionId": f"verify-{uuid.uuid4()}",
         "HostApp": "ClaudeDesktop",

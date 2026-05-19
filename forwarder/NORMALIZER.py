@@ -24,7 +24,7 @@ import CONFIG
 # Every output row must have all 23 of these keys.
 # This is the contract NORMALIZER guarantees.
 SCHEMA_COLUMNS = [
-    "TimeGenerated",
+    "EventTime",  # wire field; DCR transform maps -> reserved TimeGenerated column
     "EventType",
     "SessionId",
     "HostApp",
@@ -57,7 +57,7 @@ SCHEMA_COLUMNS = [
 # carry sentinel values (0, 0, false) per Schema v1.1 Section 6.6.
 def _empty_row() -> dict:
     return {
-        "TimeGenerated": None,
+        "EventTime": None,
         "EventType": None,
         "SessionId": None,
         "HostApp": None,
@@ -152,10 +152,11 @@ def normalize_ollmcp_event(event: dict, host_app: str, session_id: str) -> Optio
             "parameters": event.get("parameters"),
             "line_num": event.get("line_num"),
         })
-        # TimeGenerated: ollmcp parser doesn't capture per-event timestamps
-        # so we use the forwarder's current time at normalization
+        # EventTime: ollmcp parser doesn't capture per-event timestamps
+        # so we use the forwarder's current time at normalization.
+        # DCR transform maps this wire field -> stored TimeGenerated column.
         from datetime import datetime, timezone
-        row["TimeGenerated"] = datetime.now(timezone.utc).isoformat()
+        row["EventTime"] = datetime.now(timezone.utc).isoformat()
         return row
 
     # Unrecognized event type
@@ -178,7 +179,7 @@ def normalize_claude_event(event: dict, host_app: str, session_id: str) -> Optio
     row = _empty_row()
     row["HostApp"] = host_app
     row["SessionId"] = session_id
-    row["TimeGenerated"] = event.get("timestamp")
+    row["EventTime"] = event.get("timestamp")  # real Claude event time; DCR maps -> TimeGenerated
     row["ServerName"] = event.get("server_name")
     row["ModelName"] = "claude-opus"  # Hard-coded for Claude Desktop; refine in v2
 
@@ -293,7 +294,7 @@ def validate_row(row: dict) -> Optional[str]:
         return "ResultContainsInstructions is None (should be bool, sentinel false)"
 
     # Required identity fields cannot be None
-    required = ["TimeGenerated", "EventType", "SessionId", "HostApp", "IngestionAgent", "SchemaVersion"]
+    required = ["EventTime", "EventType", "SessionId", "HostApp", "IngestionAgent", "SchemaVersion"]
     for field in required:
         if row.get(field) is None:
             return f"Required field {field} is None"

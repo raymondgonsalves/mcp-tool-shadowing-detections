@@ -203,3 +203,39 @@ gap for known-limitations section, not part of this fix.
 STATUS: bug not fixed; root cause and full fix design confirmed and
 recorded. Next session = implement the above as one reviewed coordinated
 change with explicit deployment ordering. No further diagnosis needed.
+
+### BREAKTHROUGH — root cause is the TABLE schema layer, not the DCR
+
+Confirmed from Microsoft Learn (create-custom-table.md, verified against the
+GitHub source repo): "All tables in a Log Analytics workspace must have a
+TimeGenerated column, which is used to identify the ingestion time of the
+record." For a wizard-created custom _CL table, TimeGenerated is bound to
+INGESTION-TIME semantics at the TABLE SCHEMA layer — independent of, and
+overriding, anything the DCR transform produces.
+
+This single fact explains ALL FOUR prior failures:
+  - Hardcoded-transform hypothesis: wrong layer.
+  - Payload-malformation hypothesis: wrong layer.
+  - Rev1 (extend TimeGenerated = todatetime(TimeGenerated)): no-op — but the
+    deeper reason is the table layer, not the self-reference.
+  - Rev2 (rename to EventTime, extend TimeGenerated = todatetime(EventTime)):
+    transform computed the correct value; the TABLE schema overrode it with
+    ingestion time at write. Verified everything at the DCR layer; the bug
+    was never at the DCR layer.
+
+All four fixes operated on the DCR transform layer. The binding that defeats
+them is at the table schema layer, which had never been inspected. The
+transform SYNTAX was correct all along (Microsoft tutorial + SIEMtune 2026
+guide both show the exact pattern we used).
+
+Likely fix (TABLE-layer, to be confirmed by table inspection before any
+change): add a separate non-reserved datetime column (e.g. EventTimestamp)
+to the table schema; populate it with true event time; detection rules use
+EventTimestamp for time logic; TimeGenerated remains ingestion time by
+design. Lower-risk than table recreation (which destroys data).
+
+Process note: authoritative documentation should have been searched
+thoroughly after failure #1, not #4. The verification discipline was sound;
+the layer hypothesis was wrong four times. Recorded honestly.
+
+STATUS: mechanism CONFIRMED. Fix scoped pending table-schema inspection.

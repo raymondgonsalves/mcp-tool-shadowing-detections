@@ -1,57 +1,49 @@
 // =============================================================================
 //  dcr.bicep — Data Collection Rule for the MCP Tool Shadowing Detection Pack
+//  REVISION 2 — coordinated TimeGenerated reserved-column fix
 // =============================================================================
 //
-//  PURPOSE
-//  -------
-//  Declarative, version-controlled definition of the Data Collection Rule that
-//  ingests parsed MCP protocol events into the MCPProtocolLogs_CL custom table
-//  in Microsoft Sentinel (Log Analytics workspace law-mcp-detection-lab).
+//  WHY REVISION 2 EXISTS
+//  ---------------------
+//  Revision 1 attempted: transformKql = 'source | extend TimeGenerated =
+//  todatetime(TimeGenerated)'. That FAILED (no-op) because TimeGenerated is
+//  a reserved column: an inbound JSON field of that name is not bound as
+//  data — the ingestion pipeline substitutes its own ingestion-time value
+//  BEFORE the transform runs, so the transform copied the already-wrong
+//  value onto itself. Confirmed against Microsoft Learn "Send data to Azure
+//  Monitor Logs with Logs ingestion API" tutorial.
 //
-//  WHY THIS FILE EXISTS (the fix this template encodes)
-//  ----------------------------------------------------
-//  The DCR was originally created by the Sentinel custom-table portal wizard.
-//  The wizard generated a pass-through transform: transformKql = 'source'.
+//  THE COORDINATED FIX (this file + forwarder rename, deployed together):
+//    - Forwarder now emits the timestamp under the NON-reserved wire field
+//      name "EventTime" (was "TimeGenerated").
+//    - This DCR declares "EventTime" as the inbound stream column (NOT
+//      TimeGenerated).
+//    - The transform CREATES the reserved TimeGenerated column from the
+//      inbound EventTime, then drops EventTime:
+//        source | extend TimeGenerated = todatetime(EventTime)
+//               | project-away EventTime
 //
-//  Symptom observed: every ingested row's TimeGenerated column held the
-//  ingestion timestamp (~4s after upload) instead of the real MCP event
-//  timestamp the forwarder sends in its JSON payload (e.g. the April 30
-//  capture times). Confirmed by evidence: the forwarder's pre-upload payload
-//  contained the correct ISO-8601 event time, but every row in the table
-//  showed a constant 4-second delta between TimeGenerated and ingestion_time()
-//  — the fingerprint of the ingestion pipeline generating TimeGenerated
-//  itself rather than binding the inbound value.
+//  WIRE vs STORED SCHEMA (deliberate design — document in schema doc):
+//    - Wire schema (what the forwarder POSTs): uses EventTime.
+//    - Stored schema (the MCPProtocolLogs_CL table): uses TimeGenerated,
+//      created by the transform. The Schema_Document must note this split.
 //
-//  Root cause: TimeGenerated is a reserved column in Azure Monitor Logs. With
-//  the Logs Ingestion API, an inbound TimeGenerated is only bound into the
-//  column if the DCR transform EXPLICITLY projects/extends it. A bare
-//  transformKql of 'source' does not — so the pipeline substitutes its own
-//  ingestion-stage timestamp upstream of the transform.
+//  TIMESTAMP SEMANTICS PRESERVED PER SOURCE:
+//    - Claude rows: EventTime = real parsed mcp.log event time -> stored
+//      TimeGenerated reflects true event time.
+//    - ollmcp rows: EventTime = forwarder now() fallback (ollmcp has no
+//      per-event timestamps) -> honest available value for that source.
+//      Both behaviours are intentional and preserved.
 //
-//  Fix: the transform explicitly re-binds TimeGenerated from the source data:
-//      source | extend TimeGenerated = todatetime(TimeGenerated)
-//
-//  This preserves each source's intended timestamp:
-//    - Claude Desktop rows  -> real per-event time parsed from mcp.log
-//    - ollmcp rows          -> the now()-stamped fallback the forwarder sets
-//                              (ollmcp's terminal capture has no per-event
-//                              timestamps; ingestion-time fallback is the
-//                              honest value and is preserved as-is)
-//
-//  DEPLOYMENT NOTE
-//  ---------------
-//  Deploying this template with the SAME name (dcr-mcp-detection-lab) performs
-//  an in-place update. The DCR's immutableId is preserved across the update,
-//  so the forwarder's CONFIG (which references the immutable ID and DCE URL)
-//  requires no changes. Read-only properties present in the raw `az ... show`
-//  export (id, etag, provisioningState, systemData, immutableId) are
-//  deliberately omitted — including them causes deployment rejection.
+//  DEPLOYMENT: same name (dcr-mcp-detection-lab) = in-place update,
+//  immutableId preserved, forwarder CONFIG unchanged. Read-only properties
+//  (id/etag/provisioningState/systemData/immutableId) intentionally omitted.
 // =============================================================================
 
 @description('Azure region for the DCR. Must match the workspace/DCE region.')
 param location string = 'eastus'
 
-@description('Name of the Data Collection Rule. Keep stable — same name = in-place update, immutable ID preserved.')
+@description('Name of the Data Collection Rule. Stable — same name = in-place update, immutable ID preserved.')
 param dcrName string = 'dcr-mcp-detection-lab'
 
 @description('Resource ID of the Data Collection Endpoint the DCR is associated with.')
@@ -61,7 +53,6 @@ param dataCollectionEndpointId string = '/subscriptions/5faad216-600c-4e82-aded-
 param workspaceResourceId string = '/subscriptions/5faad216-600c-4e82-aded-965522b51146/resourceGroups/rg-sentinel-mcp-detection-lab/providers/Microsoft.OperationalInsights/workspaces/law-mcp-detection-lab'
 
 // Logical name for the Log Analytics destination, referenced by the dataFlow.
-// Value is arbitrary but must be consistent between destinations and dataFlows.
 var logAnalyticsDestinationName = 'd0f3187bec3542819cb652a34418236a'
 
 resource dcr 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
@@ -70,13 +61,14 @@ resource dcr 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
   properties: {
     dataCollectionEndpointId: dataCollectionEndpointId
 
-    // ---- Inbound stream shape: the 23-column MCPProtocolLogs_CL schema ----
-    // Mirrors Schema v1.1 exactly. TimeGenerated is declared datetime so the
-    // explicit transform bind below lands a typed value, not a string.
+    // ---- INBOUND stream shape ----
+    // The wire schema the forwarder POSTs. Column 1 is EventTime (NOT the
+    // reserved TimeGenerated). The transform below creates TimeGenerated
+    // from EventTime. All other columns unchanged from Schema v1.1.
     streamDeclarations: {
       'Custom-MCPProtocolLogs_CL': {
         columns: [
-          { name: 'TimeGenerated', type: 'datetime' }
+          { name: 'EventTime', type: 'datetime' }   // was TimeGenerated; wire field
           { name: 'EventType', type: 'string' }
           { name: 'SessionId', type: 'string' }
           { name: 'HostApp', type: 'string' }
@@ -122,13 +114,11 @@ resource dcr 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
         ]
         outputStream: 'Custom-MCPProtocolLogs_CL'
 
-        // *** THE FIX ***
-        // Was: 'source'  (pass-through; did NOT bind inbound TimeGenerated,
-        //                  so the pipeline substituted ingestion time).
-        // Now: explicit extend forces the inbound TimeGenerated value to be
-        //      bound into the reserved column. todatetime() makes the typed
-        //      conversion explicit and is a no-op if already datetime.
-        transformKql: 'source | extend TimeGenerated = todatetime(TimeGenerated)'
+        // *** THE FIX (Revision 2) ***
+        // Create the reserved TimeGenerated column from the inbound,
+        // non-reserved EventTime field, then drop EventTime so it does
+        // not appear as a redundant column in the stored table.
+        transformKql: 'source | extend TimeGenerated = todatetime(EventTime)'
       }
     ]
   }

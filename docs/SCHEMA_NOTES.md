@@ -81,3 +81,27 @@ can silently diverge. Single source of truth per fact:
 - The .docx is the FORMAL SPEC and should be brought into agreement
   with the live table at each versioned revision — it is never itself
   the tiebreaker against the live table.
+
+## AMENDMENT 2026-05-20 — ollmcp event-time limitation (supersedes soft guidance above)
+
+The "filter by HostApp / ModelName where precision matters" guidance
+in the ollmcp caveat above understates a structural data limitation.
+The stronger, accurate statement:
+
+ollmcp source logs DO NOT CONTAIN per-event timestamps. The forwarder's
+now() fallback for EventTime is NOT a measurement — it is a placeholder
+that allowed the row to ingest. ollmcp EventTime cannot answer event-
+time questions; that information was lost upstream of the forwarder.
+
+CONSEQUENCE FOR DETECTION RULES:
+- Content/pattern rules (poisoned-description regex, hash drift,
+  cross-tool reference): ollmcp data is valid input. These rules
+  reason about CONTENT, not TIMING. Rules 1, 2, 3 in this pack.
+- Event-time rules (temporal joins, sequencing, time windows,
+  ago() bounds, parameter divergence by temporal proximity):
+  scope to HostApp == "ClaudeDesktop". Rules 4, 5, 6 in this pack.
+
+ollmcp's attack evidence (the calendar_sync compliance run, the
+non-Claude model behavior) remains valuable for content/pattern
+detections; it is structurally incompatible with event-time logic
+and rules must reflect that explicitly, not paper over it via filters.

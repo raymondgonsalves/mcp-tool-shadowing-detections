@@ -327,3 +327,29 @@ true event time; TimeGenerated is ingestion-time by design. Detection rules
   documents the stale 23-col pre-EventTime schema and
   docs/SCHEMA_NOTES.md + the live table are authoritative. Documentation
   is NOT "done" at Day 5 until Schema_Document_v1-2.docx exists.
+
+### DAY 2 → DAY 3 RESUME POINT (paused 2026-05-19 ~19:54 EDT)
+
+DAY 2 COMPLETE. Forwarder→Sentinel pipeline operational and verified.
+TimeGenerated bug closed (commits 1106b01 → 2d03fef → dda79f6 → 69aae2e
+→ 150d8d0). All documentation items in (DAILY_LOG resolution, SCHEMA_NOTES
+with precedence rule, run-log provenance annotations).
+
+DAY 3 BEGINS WITH (in order):
+
+  1. az account show -o table   (auth may have expired overnight; re-login if needed)
+  2. git log --oneline -10       (read history, ground yourself in where you are)
+  3. cat docs/SCHEMA_NOTES.md    (THE governing document for every rule today)
+  4. cat docs/DAY3_PLAN.md       (the strategic outline for Day 3)
+
+NON-NEGOTIABLE DIRECTIVE for all Day-3 work:
+
+Every time-based KQL clause uses EventTime, NOT TimeGenerated.
+(EventTime = event time; TimeGenerated = ingestion time, by design.)
+This applies to: where filters, ago() bounds, summarize bin(), session
+duration, hash-drift timing, sequencing logic — everything.
+
+TWO TRACKED OBLIGATIONS still outstanding (Day-5 polish):
+
+  - Produce Schema_Document_v1-2.docx (new versioned file, see DAILY_LOG)
+  - Detection writeups, traceability matrix, README polish per the plan

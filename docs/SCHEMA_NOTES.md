@@ -105,3 +105,36 @@ ollmcp's attack evidence (the calendar_sync compliance run, the
 non-Claude model behavior) remains valuable for content/pattern
 detections; it is structurally incompatible with event-time logic
 and rules must reflect that explicitly, not paper over it via filters.
+
+## AMENDMENT 2026-05-20 — Lab scope and PII handling boundary
+
+This detection pack is scoped to the LAB DATASET described in the
+Tool Shadowing threat model report (May 2026). All recipients,
+sessions, and prompts in the dataset are SYNTHETIC by design
+(alice@mail.com is a lab fixture; attacker@pwnd.com is the
+demonstration target).
+
+PII HANDLING POSTURE (intentional asymmetry):
+- UserPrompt text is HASHED before storage — protects unbounded
+  unstructured PII in user input.
+- CallParameters and ExtractedEntities are stored RAW —
+  operationally necessary for Tool Shadowing detection, which
+  compares the LLM's tool-call parameters against entities
+  extracted from the user's prompt. Hashing these would destroy
+  the detection.
+
+This asymmetry is acceptable for a lab dataset with synthetic
+entities. PRODUCTION DEPLOYMENT against real user data would
+require an additional pseudonymization layer (stable per-entity
+pseudonyms with a managed key, applied consistently to both
+CallParameters and ExtractedEntities) so that divergence remains
+detectable without raw PII being stored. That layer is out of
+scope for this pack; its requirement is recorded here so any
+production deployer can identify it as a precondition.
+
+CONSEQUENCE FOR DETECTION RULES:
+- Rules MAY read raw entity values from CallParameters and
+  ExtractedEntities. This is expected.
+- Rule writeups (Day 5) MUST include this scoping in a Limitations
+  section so the lab-vs-production boundary is visible to anyone
+  reading the rule, not buried in this file.

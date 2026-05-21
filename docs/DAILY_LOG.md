@@ -353,3 +353,51 @@ TWO TRACKED OBLIGATIONS still outstanding (Day-5 polish):
 
   - Produce Schema_Document_v1-2.docx (new versioned file, see DAILY_LOG)
   - Detection writeups, traceability matrix, README polish per the plan
+
+### DAY 3 MID-MORNING PAUSE (2026-05-21 ~07:15 EDT, resume 11:00 EDT)
+
+DESIGN STATE TO PRESERVE ACROSS BREAK:
+
+UserPromptHash verification query (2026-05-20) revealed: Claude rows
+empty, ollmcp rows show identical static hash across 3 sessions. Field
+is decorative in current data; cannot support cross-table correlation.
+
+Path 1 (hash-based correlation, forwarder retrofit) considered and
+rejected — substantial scope expansion against unknown data
+availability; would build broader capability than threat model
+requires. Path 2 (SessionId + temporal ordering, new MCPUserIntent_CL
+table) initially chosen as the architecturally-sound fit for an
+intra-session attack class.
+
+Path 2 BLOCKED by 2026-05-21 investigation. Foundational assumption
+(user prompts accessible in mcp.log) verified false: mcp.log contains
+only tool calls and protocol traffic. Investigation of Claude Desktop
+local storage on this machine: conventional directories absent;
+Claude-named directories that do exist (Claude Nest-3p, Claude-3p,
+claude-cli-nodejs) are empty shells or contain only Claude Code's
+cache. User prompts are not accessible from local filesystem without
+substantially larger investigation (reverse engineering of Claude
+Desktop's persistence layer) outside project scope.
+
+DECISION (2026-05-21 ~07:00 EDT): Pivot to Path 3 — intra-row pattern
+detection. Rule 4 reads CallParameters directly; no cross-table join;
+no new table needed. Attack signature visible in existing data
+(recipient-doesn't-match-body entities; "original recipient: X" tell
+in body). Architecturally matches available data; portfolio narrative
+documents the investigation, the data gap, and the deliberate
+architectural choice as senior engineering judgment, not as fallback.
+
+RESUME AT 11:00 EDT WITH (in order):
+  1. cat ~/dev/mcp-tool-shadowing-detections/docs/DAILY_LOG.md | tail -40
+     (re-read this resume entry first)
+  2. Determine documentation order: full DAILY_LOG entry capturing
+     investigation + ollmcp static-hash limitation, then either
+     SCHEMA_NOTES.md or DAY3_PLAN.md amendment recording Path 3
+     architecture choice (open question — likely DAY3_PLAN.md).
+  3. Then Rule 4 KQL design begins (intra-row pattern detection).
+
+OPEN QUESTIONS FOR RESUME:
+  - Which document (SCHEMA_NOTES.md vs DAY3_PLAN.md) is the right
+    home for the Path 3 architectural pivot record? Lean DAY3_PLAN.md.
+  - Bundle ollmcp static-hash note with Path 3 pivot DAILY_LOG entry,
+    or separate? Lean bundle.

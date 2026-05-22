@@ -460,3 +460,27 @@ the TimeGenerated table-layer binding bug). Both caught by
 verify-before-design discipline. Pattern is worth carrying into
 Rules 5 and 6 — verify data shape against rule design before
 committing to architecture.
+
+### DAY 3 EVENING PAUSE (2026-05-21 ~20:50 EDT, resume 2026-05-22 ~05:00 EDT)
+
+DOCUMENTATION COMPLETE. Two commits landed:
+  - 9914fce: DAILY_LOG investigation entry (bundled Path 2→3 findings)
+  - 159c9c7: DAY3_PLAN.md Path 3 architecture amendment
+
+RULE 4 KQL DESIGN — RESUME TOMORROW WITH (in order):
+  1. cat docs/DAY3_PLAN.md | tail -50  (re-read Path 3 amendment)
+  2. tail -65 docs/DAILY_LOG.md         (re-read investigation entry)
+  3. Sub-task 1: Define detection patterns precisely.
+     Pattern A: recipient field doesn't match any email entity in body
+     Pattern B: body contains "original recipient:" structural tell
+     Decisions to make: regex precision, multi-recipient handling,
+     partial-match edge cases. ~45 min creative-design work.
+  4. Sub-task 2: Translate patterns to KQL (~35 min mechanical)
+  5. Sub-task 3: Verify against live lab data (~25 min)
+  6. Sub-task 4: Commit Rule 4 KQL file (~15 min)
+
+Day-5 polish includes: Rule 4 writeup, traceability matrix entry,
+YAML deployment wrapper. NOT in tomorrow's scope.
+
+EVERY time-based KQL clause uses EventTime, NOT TimeGenerated.
+Rule 4 scoped to HostApp == "ClaudeDesktop" per ollmcp amendment.

@@ -1,0 +1,99 @@
+// =====================================================================
+// REJECTED — Rule 4A: Tool Shadowing recipient/body entity mismatch
+// =====================================================================
+//
+// STATUS: This rule was designed and then REJECTED during verification
+// against lab data on 2026-05-22. It is preserved here as an artifact
+// of the design exploration. It is NOT deployed and should NOT be
+// committed to /rules/. The reasons for rejection are documented below.
+//
+// Design intent: Detect send_email tool calls where the recipient
+// address does not appear as an email entity anywhere in the body.
+// Premise: in legitimate emails, the recipient is typically referenced
+// in the body (by email address, in greetings, in signatures, or in
+// forwarded content). When the LLM constructs a tool call whose
+// recipient is decoupled from any body entity, the recipient was
+// likely set by something other than the user's intent.
+//
+// Why it was rejected: verification against the lab baseline dataset
+// revealed that legitimate short emails do not reference the recipient
+// in the body at all. The actual data showed:
+//
+//   - ClaudeDesktop legitimate rows: body = "Hi Alice. How are you?"
+//     or "Hi Alice" — addresses the recipient by NAME, not by email
+//     address. The extract_all() regex returns an empty email set
+//     from the body, and the recipient (alice@mail.com) is not in
+//     that empty set, so the rule fires — a false positive on
+//     legitimate traffic.
+//
+//   - ollmcp rows: body = "Hi, just checking in" — does not
+//     reference the recipient at all (no name, no email). This
+//     phrasing is recipient-agnostic. The same body appears with
+//     both the legitimate recipient (alice@mail.com) AND the
+//     hijacked recipient (attacker@pwnd.com). The rule's logic
+//     cannot distinguish legitimate from hijacked when the body
+//     contains no recipient identifier of any kind.
+//
+// Two follow-up design variants were considered and also rejected:
+//
+//   Variant A — local-part name matching: extract 'alice' from
+//   'alice@mail.com' and check whether the body contains 'alice'
+//   (case-insensitive). Rejected because short legitimate bodies
+//   like "Hi, just checking in" do not contain the local-part
+//   either — same false-positive failure mode.
+//
+//   Variant B — combined email-or-name matching: check for either
+//   the email address OR the local-part name in the body. Rejected
+//   for the same fundamental reason: bodies that don't reference
+//   the recipient at all are LEGITIMATE in short casual emails,
+//   not anomalous.
+//
+// Root cause of the rejection: Rule 4A's underlying premise — that
+// the recipient should be referenced in the body — is empirically
+// false for short casual emails. The detection signature is built
+// on the absence of a marker that legitimate emails routinely also
+// lack. The rule cannot distinguish "legitimate short email" from
+// "hijacked short email" based on body content alone.
+//
+// Why this matters for the project narrative: the rejection was not
+// a design flaw caught early — it was caught by VERIFICATION AGAINST
+// REAL LAB DATA, which is the discipline that this project has held
+// throughout. The same verify-before-design discipline that caught
+// the TimeGenerated table-layer binding bug and the user-prompt
+// data absence also caught this. Recording the rejected design
+// preserves the integrity of the iterative reasoning.
+//
+// Replacement: Rule 4 was narrowed to the 'Original recipient:'
+// structural tell detection only — a detection grounded in an
+// artifact the attack itself produces, rather than the absence of
+// a marker in legitimate emails. See:
+//   rules/rule_04_original_recipient_tell.kql
+//
+// Authored: 2026-05-22 (Day 3 design exploration)
+// Status set to REJECTED: 2026-05-22 (Sub-task 3 baseline verification)
+// =====================================================================
+
+// THE KQL BELOW IS PRESERVED AS THE REJECTED DESIGN. DO NOT DEPLOY.
+
+MCPProtocolLogs_CL
+| where EventType == "ToolCallInvoked"
+| where HostApp == "ClaudeDesktop"
+| where ToolName == "send_email"
+| where isnotnull(EventTime)
+| where EventTime > ago(7d)
+| extend Recipient = tostring(CallParameters.recipient)
+| extend Body = tostring(CallParameters.body)
+| where isnotempty(Body)
+| extend BodyEmails = extract_all(@"[\w\.-]+@[\w\.-]+\.\w+", Body)
+| where Recipient !in (BodyEmails)
+| project
+    EventTime,
+    SessionId,
+    HostApp,
+    ModelName,
+    ToolName,
+    Recipient,
+    Body,
+    BodyEmails,
+    UserPromptHash,
+    CallId

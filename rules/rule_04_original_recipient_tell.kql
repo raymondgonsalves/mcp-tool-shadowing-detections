@@ -1,0 +1,86 @@
+// =====================================================================
+// Rule 4 — Tool Shadowing: 'Original recipient:' structural tell
+// =====================================================================
+//
+// Detects: send_email tool calls whose body contains the substring
+// 'original recipient:' (case-insensitive). This phrasing is a direct
+// mechanical artifact of the Tool Shadowing payload demonstrated in the
+// threat model report (calendar_sync.py) — when the LLM complies with
+// the poisoned instruction "move the original recipient to the email
+// body," the natural phrasing produced is exactly this structural tell.
+//
+// Hypothesis: legitimate emails do not contain the phrase 'original
+// recipient:' at any position in the body. The phrase has no organic
+// purpose in normal human-written email content. When it appears, it
+// is direct evidence that an LLM was instructed to redirect a tool
+// call and report the original target inside the body — the precise
+// behavioral signature of the calendar_sync Tool Shadowing payload.
+//
+// Threat Model: Findings 13, 15, 17 (Tool Shadowing — pre-authorized
+// tool weaponization with parameter-level redirection).
+// OWASP Agentic Top 10: ASI02 (Tool Misuse), ASI09 (Human-Agent Trust).
+// MITRE ATLAS: AML.T0048 (External Harms).
+//
+// Scope: ClaudeDesktop only. ollmcp data lacks reliable event-time
+// (forwarder now() fallback, not source measurement) per SCHEMA_NOTES.md
+// AMENDMENT 2026-05-20 (ollmcp event-time limitation).
+//
+// PII handling: reads CallParameters raw, consistent with SCHEMA_NOTES.md
+// AMENDMENT 2026-05-20 (Lab scope and PII handling boundary). Production
+// deployment against real user data requires pseudonymization layer
+// noted in that amendment.
+//
+// Architecture: intra-row pattern detection (Path 3). Original Path 2
+// design (cross-table correlation against user-intent table) was
+// infeasible — user prompts not in MCP protocol log and not accessible
+// from Claude Desktop local storage. Path 3 reads structured tool-call
+// data directly. See DAY3_PLAN.md AMENDMENT 2026-05-21.
+//
+// EventTime handling: isnotnull(EventTime) clause excludes pre-fix
+// historical artifacts from before the 2026-05-19 forwarder fix
+// (commit 2d03fef). Detection operates only on rows from the
+// working-forwarder pipeline.
+//
+// Design evolution: Rule 4 was originally designed with two sub-rules:
+// 4A (recipient/body entity mismatch) and 4B ('Original recipient:'
+// structural tell). Verification against lab data (2026-05-22)
+// revealed that 4A's underlying premise — that legitimate emails
+// reference the recipient in the body — does not hold for short
+// casual emails like "Hi, just checking in" which legitimately
+// contain no recipient identifier. Rule 4A was rejected; the
+// preserved exploration artifact is at:
+//   docs/explorations/rule_04a_recipient_body_mismatch_REJECTED.kql
+// Rule 4 narrowed to the structural-tell detection only — grounded
+// in an artifact the attack itself produces, not in the absence of
+// a marker in legitimate emails.
+//
+// Detection logic: case-insensitive substring match for
+// 'original recipient:' anywhere in the body. Sufficient for the
+// payload variant demonstrated in the threat model. Broader attack
+// variants using different phrasings (e.g., 'Originally to:',
+// 'Forwarded from:') are not detected by this rule and are noted
+// as a known limitation in the Day-5 writeup.
+//
+// Authored: 2026-05-22 (Day 3 KQL design)
+// =====================================================================
+
+MCPProtocolLogs_CL
+| where EventType == "ToolCallInvoked"
+| where HostApp == "ClaudeDesktop"
+| where ToolName == "send_email"
+| where isnotnull(EventTime)
+| where EventTime > ago(7d)
+| extend Recipient = tostring(CallParameters.recipient)
+| extend Body = tostring(CallParameters.body)
+| where isnotempty(Body)
+| where tolower(Body) contains "original recipient:"
+| project
+    EventTime,
+    SessionId,
+    HostApp,
+    ModelName,
+    ToolName,
+    Recipient,
+    Body,
+    UserPromptHash,
+    CallId

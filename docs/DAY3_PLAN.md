@@ -104,3 +104,44 @@ slips, it slips into Rule 6, which is the easiest of the three.
 4. Read THIS file end-to-end
 5. Begin Rule 4 with the MCPUserIntent_CL schema design — NOT KQL.
    Schema before query, every time.
+
+## AMENDMENT 2026-05-21 — Rule 4 architecture: pivot to Path 3 (intra-row pattern detection)
+
+The original Day-3 plan implicitly assumed hash-based prompt correlation
+(equivalent to Path 1 in subsequent design conversation). Verification
+work on 2026-05-20 and 2026-05-21 revealed two structural issues:
+
+1. UserPromptHash field is decorative in current data — Claude rows
+   empty, ollmcp rows show a static placeholder repeated across distinct
+   sessions. The column cannot serve as a join key without forwarder
+   retrofit (Path 1) that exceeds Day-3 scope.
+
+2. User prompts are not accessible from the MCP protocol log or from
+   Claude Desktop's local storage on this machine. Path 2 (SessionId +
+   temporal ordering, MCPUserIntent_CL new table) requires user-intent
+   data the forwarder has no source for.
+
+Pivot to Path 3 — intra-row pattern detection. Rule 4 reads
+CallParameters directly:
+  - Match on recipient-doesn't-match-body entities, OR
+  - Match on "original recipient: X" structural tell in body
+
+No new table; no cross-table join; no entity-extraction pipeline.
+Detection logic lives entirely within the ToolCallInvoked event shape
+already captured by MCPProtocolLogs_CL.
+
+CONSEQUENCE FOR DETECTION RULES:
+- Rule 4 design work for Day 3 is the KQL pattern-match logic, NOT
+  schema design for a new table.
+- Rule 4 scope unchanged: still scoped to HostApp == "ClaudeDesktop"
+  per the ollmcp event-time amendment in SCHEMA_NOTES.md.
+- Rule writeup (Day 5) must document the architectural pivot as
+  deliberate — the data-availability investigation chain is itself
+  the senior-engineering narrative this rule represents.
+
+Path 2 architecture is not permanently abandoned. If user-prompt
+capture becomes feasible in a future iteration (forwarder retrofit,
+Anthropic publishes Claude Desktop's persistence layer, separate
+prompt-capture tool), MCPUserIntent_CL schema design returns as
+viable future work. For this project iteration, Path 3 matches the
+data we have.

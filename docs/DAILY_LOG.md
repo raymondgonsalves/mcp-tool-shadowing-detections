@@ -401,3 +401,62 @@ OPEN QUESTIONS FOR RESUME:
     home for the Path 3 architectural pivot record? Lean DAY3_PLAN.md.
   - Bundle ollmcp static-hash note with Path 3 pivot DAILY_LOG entry,
     or separate? Lean bundle.
+
+### DAY 3 INVESTIGATION — Path 2 verified infeasible, pivot to Path 3
+
+Bundles two findings from yesterday's UserPromptHash verification
+query (2026-05-20) with the foundational-assumption investigation
+today (2026-05-21). Both findings inform the Path 3 architectural
+pivot recorded separately in DAY3_PLAN.md.
+
+FINDING 1 — UserPromptHash is decorative in current data.
+
+Verification query against MCPProtocolLogs_CL ToolCallInvoked rows
+returned 10 rows showing:
+- 4 ClaudeDesktop rows: UserPromptHash empty
+- 6 ollmcp rows: UserPromptHash populated, but with identical static
+  hash (69a33a193f610bd8...) across 3 distinct SessionIds
+
+Neither implementation supports per-prompt correlation. ClaudeDesktop
+side: forwarder doesn't populate. ollmcp side: static placeholder, not
+a real per-session hash. The schema column exists but its current
+contents cannot serve as a join key.
+
+FINDING 2 — User prompts not in mcp.log (foundational assumption
+failure for Path 2).
+
+Path 2 architecture (SessionId + temporal ordering, new
+MCPUserIntent_CL table) requires user prompt data as the right-hand
+side of the join. Verified today: mcp_protocol_evidence.log contains
+only MCP protocol traffic (tool calls, results, handshakes). User
+prompts traverse Claude Desktop's chat UI directly into Claude's
+model reasoning — they do NOT cross the MCP protocol channel and
+are therefore absent from the protocol log.
+
+Investigation of Claude Desktop local storage (~/AppData/Local/ and
+~/AppData/Roaming/): conventional Claude data directories absent.
+Three Claude-named directories that DO exist (Claude Nest-3p,
+Claude-3p, claude-cli-nodejs) are empty shells or contain only Claude
+Code's cache. No conversation history accessible without substantially
+larger investigation (reverse engineering Claude Desktop persistence
+layer) — outside project scope.
+
+DECISION — Pivot Rule 4 architecture from Path 2 to Path 3.
+
+Path 3 = intra-row pattern detection on CallParameters. The Tool
+Shadowing attack signature is already visible in existing data:
+recipient-doesn't-match-body entities, OR "original recipient: X"
+structural tell in body. Rule 4 reads CallParameters directly; no
+cross-table join; no MCPUserIntent_CL needed.
+
+Path 3 architecturally matches available data. Recorded as deliberate
+architectural choice — Day-5 writeup will document the investigation
+chain (what was tried, what was found, what was concluded) as the
+senior-engineering narrative this pivot represents.
+
+PROCESS NOTE: this is the second case in three days where a
+foundational assumption verified false on inspection (first being
+the TimeGenerated table-layer binding bug). Both caught by
+verify-before-design discipline. Pattern is worth carrying into
+Rules 5 and 6 — verify data shape against rule design before
+committing to architecture.

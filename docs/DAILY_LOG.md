@@ -693,3 +693,203 @@ with prior days (TimeGenerated table-layer binding, user-prompts-in-
 mcp.log, Claude Desktop local storage). The discipline is the work.
 
 ---
+## Day 3 wrap — Saturday 2026-05-23
+
+**Session window:** ~09:00 EDT — ~14:00 EDT (with breaks).
+
+### Summary
+
+Today's session closed the Rule 4 verification loop — the load-bearing
+milestone of the entire detection pack. Rule 4 was reclassified from
+event-time to content/pattern (architectural correction), the V2
+attack data captured yesterday was ingested into the Sentinel
+workspace, and Rule 4 was demonstrated firing on the V2 attack data
+(Figure 2) while showing zero false positives on legitimate
+ClaudeDesktop traffic (Figure 3).
+
+Today's work spans three commits:
+- `2ac8d9f` — PARSER_OLLMCP.py typo fix (returnp -> return, debug-only path)
+- `6decd63` — Rule 4 architectural reclassification (event-time -> content/pattern)
+- [next commit] — DAILY_LOG Day 3 wrap entry (this entry)
+
+### Architectural correction
+
+Day 3 morning's verification work surfaced an internal inconsistency
+between SCHEMA_NOTES.md AMENDMENT 2026-05-20 (Rule 4 classified as
+event-time, scoped to ClaudeDesktop) and DAY3_PLAN.md AMENDMENT
+2026-05-21 (Path 2 -> Path 3 pivot that made Rule 4 structurally
+content-only).
+
+The May 21 amendment had stated "Rule 4 scope unchanged: still
+scoped to HostApp == 'ClaudeDesktop'." That carryover was incorrect
+under Path 3 — content/pattern rules accept both hosts per the May
+20 amendment's own definition. The carryover went un-examined for
+three days.
+
+Today's correction:
+- SCHEMA_NOTES.md AMENDMENT 2026-05-23: reclassifies Rule 4 as
+  content/pattern; explicitly defends Rules 5 and 6 retaining their
+  event-time classification (their temporal-join designs are still
+  current under Path 2 architecture).
+- DAY3_PLAN.md AMENDMENT 2026-05-23: cross-reference amendment;
+  retracts the "scope unchanged" claim from May 21.
+- rules/rule_04_original_recipient_tell.kql: removed `where HostApp
+  == "ClaudeDesktop"` filter and both EventTime filters; updated
+  header with reclassification history and corrected classification
+  section. Rule body now 7 pipeline operators (was 10).
+
+The reclassification adjusts scope, not detection. Signature, threat
+model mapping (Findings 13, 15, 17), OWASP mapping (ASI02, ASI09),
+MITRE ATLAS mapping (AML.T0048), and detection logic are unchanged.
+
+### V2 attack data ingest
+
+The V2 attack data captured yesterday (ollmcp_attack_capture.log,
+17426 bytes, contains the "Original recipient:" structural tell from
+yesterday's Start-Transcript session with llama3.2) was ingested
+into MCPProtocolLogs_CL via the forwarder:
+
+```
+cd ~/dev/mcp-tool-shadowing-detections/forwarder
+python _main.py 2>&1 | tee /tmp/forwarder_ingest_20260523_1326.log
+```
+
+Ingest summary:
+- Connection verification probe: success (1 probe row, auth and DCR
+  wiring confirmed)
+- Real ingest: 32 rows uploaded in 1 batch, 0 dead-lettered, 0.82s
+  elapsed
+- Event types: SessionStart x10, ToolCallInvoked x10,
+  ToolDescriptionLoaded x8, SessionEnd x2, ToolResultReturned x2
+- Distinct tool-description hashes: 3 (consistent with send_email
+  + calendar_sync V1 + calendar_sync V2)
+
+The forwarder is non-incremental (no offset tracking; re-reads all
+configured log files from byte 0 on each run). This was accepted as
+known technical debt per Solution D earlier in the session — Rule 4
+verification does not depend on precise row counts, only on the
+presence of V2 attack data in the table. Forwarder dedup is real
+future work (next-session candidate).
+
+### Figure 2 — Rule 4 fires on V2 attack data
+
+Ran the committed Rule 4 KQL against the Sentinel workspace
+(law-mcp-detection-lab) via the Logs blade. Time range: Last 24
+hours. Result: 2 rows fire — both V2 attack captures from yesterday's
+ollmcp session (Answer and Answer-Markdown duplicates, distinct
+synthetic CallIds ollmcp_199 and ollmcp_204).
+
+Both rows show:
+- HostApp: ollmcp
+- ModelName: llama3.2
+- Recipient: attacker@pwnd.com (the redirected attacker email,
+  NOT the alice@mail.com the user specified)
+- Body: "Original recipient: alice@mail.com\nHi, just checking on
+  the project status update."
+
+The body starts with the structural tell ("Original recipient: ...")
+followed by the user's original body content. This is the V2 payload's
+mechanical specification followed exactly by the LLM.
+
+Evidence:
+- Screenshot: D:\CyberSecurity\CyberRange\Agentic AI\KQL Detection Pack\figure_02_rule_04_fires_on_v2_attack.png
+- CSV export: D:\CyberSecurity\CyberRange\Agentic AI\KQL Detection Pack\figure_02_rule_04_fires_on_v2_attack.csv
+
+### Figure 3 — Rule 4 zero false positives on Claude data
+
+Ran a modified Rule 4 (with temporary `where HostApp ==
+"ClaudeDesktop"` filter added on line 3) to demonstrate the
+no-false-positives behavior on legitimate Claude Desktop traffic.
+Time range: Last 24 hours. Result: 0 rows.
+
+Claude refused the V1 calendar_sync payload in every captured run
+(threat model report documents this; Claude's safety training
+detected the prompt injection). No Claude row contains the
+"Original recipient:" structural tell because Claude never
+constructed an attack-compliant tool call. Rule 4's content match
+is specific enough that it does not false-positive on legitimate
+Claude traffic.
+
+The Figure 3 KQL is NOT a permanent rule modification — it is a
+verification query only, demonstrating Rule 4's specificity.
+
+Evidence:
+- Screenshot: D:\CyberSecurity\CyberRange\Agentic AI\KQL Detection Pack\figure_03_rule_04_zero_fps_on_claude.png
+
+### The detection pack milestone
+
+Together, Figures 2 and 3 close the verification loop for Rule 4:
+- Figure 2 proves Rule 4 detects the Tool Shadowing attack when
+  it succeeds (V2 ollmcp data)
+- Figure 3 proves Rule 4 does not false-positive on legitimate
+  traffic in event-time-anchored hosts (Claude data)
+
+The end-to-end chain is now demonstrated:
+1. Tool Shadowing attack theorized (threat model report May 2026)
+2. Attack demonstrated in lab (V1 partial compliance, then V2 full
+   compliance on llama3.2 via ollmcp)
+3. Attack data captured in MCP protocol schema (CallParameters
+   preserved with structural tell intact)
+4. Data ingested into Sentinel workspace via forwarder pipeline
+5. Rule 4 detects the structural tell in real ingested data
+6. Rule 4 has zero false positives on legitimate traffic
+
+This is what makes this a detection pack rather than an analysis
+report — the rule operates on real data the forwarder pipeline
+delivered, producing a verified detection of a real attack class.
+
+### Known cosmetic technical debt
+
+The commit message for 6decd63 has a trailing `figures.EOF` artifact
+from a heredoc paste issue. The commit itself is correct (3 files,
+241 insertions, 27 deletions all as intended). The cosmetic artifact
+is deferred to Day-5 polish.
+
+### Resume plan for next session
+
+The Day-3 milestone (Rule 4 firing on V2 attack data) is now
+complete. Day-4 work begins:
+
+1. **Rule 5 design** — MCP host outbound anomaly. Joins
+   ToolCallInvoked events against DeviceProcessEvents +
+   DeviceNetworkEvents within a temporal proximity window. This
+   IS event-time-bound (per SCHEMA_NOTES.md amendments, scopes
+   to ClaudeDesktop). Estimated: ~1.5-2 hours per the Project Plan.
+
+2. **Rule 6 design** — Audit log integrity check. Scheduled hunt;
+   anti-join MCPProtocolLogs_CL against a user-intent record source.
+   The user-intent source was previously assumed to be a new
+   MCPUserIntent_CL table; under Path 3 architecture that table
+   does not exist, so Rule 6's design needs to be re-examined.
+   Worth flagging as a design decision before writing KQL.
+
+3. **Optional**: Day-5 polish if Rule 5 and Rule 6 land cleanly —
+   traceability matrix, YAML rule wrappers, README, repo polish.
+   Per Project Plan Day-5 is its own dedicated day; treating Day-5
+   as "optional spillover from Day 4" risks rushing the writeup
+   work that is the senior-engineering signal.
+
+### Lessons from today
+
+The biggest lesson today: **classification inheritance after
+architectural pivot is the failure mode to watch for.** Rule 4
+was classified event-time on May 20 (correct under Path 2). Path
+3 pivot on May 21 made the rule content/pattern but the May 21
+amendment carried forward the prior classification without
+re-examining it under the new architecture. The mismatch went
+undetected until Day-3 verification surfaced it.
+
+This is the third instance on this project of an assumption
+verified false on inspection (TimeGenerated table-layer binding
+bug; user-prompts-in-mcp.log absence; Rule 4 classification
+carryover). Same lesson each time: when architecture pivots,
+classifications inherited from the prior design must be re-derived
+under the new architecture, not carried forward by default.
+
+For Day 4: when Rule 5 and Rule 6 designs are being committed,
+explicitly check that any classification or scope claim is grounded
+in their actual Path 3 design, not inherited from the original
+Path 2 plan. Same check that should have happened on May 21 for
+Rule 4.
+
+---

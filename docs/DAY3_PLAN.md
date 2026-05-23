@@ -145,3 +145,54 @@ Anthropic publishes Claude Desktop's persistence layer, separate
 prompt-capture tool), MCPUserIntent_CL schema design returns as
 viable future work. For this project iteration, Path 3 matches the
 data we have.
+## AMENDMENT 2026-05-23 — Rule 4 scope correction (cross-reference)
+
+This amendment corrects the scope inheritance recorded in DAY3_PLAN.md
+AMENDMENT 2026-05-21 (Path 3 architecture pivot).
+
+The May 21 amendment stated:
+*"Rule 4 scope unchanged: still scoped to HostApp == 'ClaudeDesktop'
+per the ollmcp event-time amendment in SCHEMA_NOTES.md."*
+
+That statement carried the May 20 classification forward without
+re-examining it under the new Path 3 architecture. The carryover
+was incorrect: Path 3 made Rule 4 a content/pattern rule, which
+per SCHEMA_NOTES.md AMENDMENT 2026-05-20's own definition is
+host-agnostic.
+
+The full architectural reasoning for the correction is documented
+in SCHEMA_NOTES.md AMENDMENT 2026-05-23 (Rule 4 reclassification,
+event-time → content/pattern). That amendment is the authoritative
+source for the reclassification; this DAY3_PLAN.md amendment records
+the cross-reference and removes the erroneous scope-unchanged claim
+from the May 21 amendment's standing guidance.
+
+### Standing guidance for Day 3 work — corrected
+
+The May 21 amendment's closing line stated: *"Rule 4 scope unchanged:
+still scoped to HostApp == 'ClaudeDesktop'."* Under the correction,
+this is no longer accurate. The corrected standing guidance is:
+
+- Rule 4 is a content/pattern rule under Path 3 — no host scope
+  restriction. Reads CallParameters.body directly; matches on the
+  structural-tell substring; consumes ClaudeDesktop and ollmcp data
+  identically.
+- Rules 5 and 6 remain event-time-bound under their planned designs
+  (temporal joins, scheduled anti-joins). They retain the
+  ClaudeDesktop scope established by SCHEMA_NOTES.md AMENDMENT
+  2026-05-20. The Rule 4 reclassification does not propagate to
+  them; the Day-3 plan for Rules 5 and 6 is unchanged.
+
+### Process note
+
+The May 21 amendment's carryover was the inverse of the verify-
+before-design discipline that has been right repeatedly on this
+project. A real architectural change (Path 2 → Path 3) was made,
+but inherited classifications were not re-examined under the new
+design. This is the third instance of an assumption verified false
+on inspection, alongside the TimeGenerated table-layer binding bug
+and the user-prompts-in-mcp.log absence. Same lesson each time:
+when architecture pivots, all classifications inherited from the
+prior design must be re-derived, not carried forward by default.
+
+---

@@ -138,3 +138,148 @@ CONSEQUENCE FOR DETECTION RULES:
 - Rule writeups (Day 5) MUST include this scoping in a Limitations
   section so the lab-vs-production boundary is visible to anyone
   reading the rule, not buried in this file.
+## AMENDMENT 2026-05-23 — Rule 4 reclassification (event-time → content/pattern)
+
+This amendment reclassifies Rule 4 from the event-time category to
+the content/pattern category. It corrects an internal inconsistency
+between AMENDMENT 2026-05-20 (event-time classification) and
+DAY3_PLAN.md AMENDMENT 2026-05-21 (Path 3 architecture pivot).
+
+### Background
+
+AMENDMENT 2026-05-20 classified Rules 4, 5, and 6 as event-time rules
+and scoped them to HostApp == "ClaudeDesktop" because ollmcp's
+forwarder-supplied EventTime is a placeholder (now() at ingestion),
+not a source measurement.
+
+At the time AMENDMENT 2026-05-20 was written, Rule 4 was envisioned
+as a CROSS-TABLE join (the Path 2 design): correlating ToolCallInvoked
+events in MCPProtocolLogs_CL against user-prompt records in a new
+MCPUserIntent_CL table, using SessionId plus temporal proximity as
+the join condition. Under that design, Rule 4 was inherently
+event-time-bound — the join logic required reliable per-event
+timestamps to establish temporal correlation between prompt and
+tool-call.
+
+### What changed on 2026-05-21
+
+DAY3_PLAN.md AMENDMENT 2026-05-21 documented a pivot from Path 2 to
+Path 3 — intra-row pattern detection on CallParameters. The pivot was
+forced by data-availability findings: user prompts were not accessible
+from the MCP protocol log or from Claude Desktop's local storage, and
+the UserPromptHash field was decorative rather than functional.
+
+Under Path 3, Rule 4 became structurally content-only. The detection
+logic reads CallParameters.body and matches the "Original recipient:"
+substring. No cross-table join. No temporal correlation. No reliance
+on event-time semantics for the detection itself. Per SCHEMA_NOTES.md
+AMENDMENT 2026-05-20's own definition, this is a content/pattern
+rule — it reasons about CONTENT, not TIMING.
+
+### The unresolved inconsistency
+
+The May 21 amendment recorded the Path 3 pivot but stated explicitly:
+*"Rule 4 scope unchanged: still scoped to HostApp == 'ClaudeDesktop'
+per the ollmcp event-time amendment in SCHEMA_NOTES.md."*
+
+That statement carried forward the May 20 classification without
+re-examining whether it still applied. It did not. The May 20
+classification was based on Path 2's event-time-bound join design;
+Path 3 removed that dependency entirely. The scope decision was
+inherited rather than reasoned through under the new architecture.
+
+The current committed rule_04_original_recipient_tell.kql reflects
+this inherited scope — it contains both `where HostApp ==
+"ClaudeDesktop"` and `where EventTime > ago(7d)` filters that were
+load-bearing under Path 2 but are not load-bearing under Path 3.
+
+### What this amendment corrects
+
+Rule 4 is reclassified as a content/pattern rule. This is consistent
+with:
+- Its actual Path 3 detection logic (intra-row pattern match on
+  CallParameters.body)
+- The SCHEMA_NOTES amendment 2026-05-20 definition of content/pattern
+  rules ("reason about CONTENT, not TIMING")
+- The data flow Rule 4 actually executes (no cross-table join, no
+  temporal correlation, no event-time-sensitive operations)
+
+The reclassification is a documentation correction, not a relaxation
+of detection discipline. The rule's signature, its threat-model
+mapping, its OWASP and MITRE annotations, and its detection logic
+all remain unchanged. What changes is the scope: from
+ClaudeDesktop-only to host-agnostic, matching the host-class that
+content/pattern rules already cover under the May 20 amendment.
+
+### Pre-fix historical-artifact handling
+
+The committed Rule 4 includes `where EventTime > ago(7d)` and
+`where isnotnull(EventTime)`. The original purpose of these filters
+was to exclude historical artifacts from before the 2026-05-19
+forwarder fix (commit 2d03fef) when EventTime was unreliable across
+the table.
+
+Under the reclassified Rule 4, these filters are removed because:
+1. They are event-time logic in a rule that is no longer
+   event-time-bound — keeping them is "papering over via filters"
+   which the May 20 amendment explicitly prohibits for non-content
+   reasoning.
+2. The content match itself excludes the historical artifacts in
+   practice. Pre-2026-05-19 ClaudeDesktop rows do not contain the
+   "Original recipient:" structural tell (Claude refused the V1
+   payload in every captured run; no V2 attack was ever produced
+   on ClaudeDesktop). The rule's content predicate is self-filtering
+   against pre-fix data.
+3. The discipline is to filter on what the rule needs, not on
+   defensive overhead. A content/pattern rule that consumes
+   content/pattern data does not need event-time gating.
+
+### Rules 5 and 6 — scope reconsidered explicitly, retained
+
+Rules 5 (MCP host outbound anomaly) and 6 (Audit log integrity check)
+remain event-time-bound. Their detection logic, as planned, requires
+real temporal correlation:
+
+- Rule 5 joins ToolCallInvoked events against DeviceProcessEvents
+  and DeviceNetworkEvents within a temporal proximity window. The
+  N-second window between tool call and outbound connection is
+  the detection signature itself. Event-time semantics are
+  load-bearing.
+
+- Rule 6 performs scheduled anti-joins between tool-call records
+  and user-intent records, with the temporal boundary defining
+  what "missing" means. Event-time semantics are load-bearing.
+
+For both rules, the ClaudeDesktop scope under the May 20 amendment
+remains correct and is not amended here.
+
+### Consequence for the detection pack
+
+The Rule 4 reclassification produces:
+- Updated rule_04_original_recipient_tell.kql with content/pattern
+  scope (host-agnostic, no event-time filters).
+- No change to detection signature, threat-model mapping, or rule
+  count (still 6 rules).
+- Rule 4 fires on the V2 attack capture in ollmcp data — which the
+  May 20 amendment's content/pattern category already permits.
+- Day-5 writeup for Rule 4 must explain the Path 2→3 architectural
+  pivot and the reclassification as part of the rule's design
+  narrative.
+
+### Process note
+
+This is the third time on this project that an architectural
+assumption verified false on inspection (the TimeGenerated
+table-layer binding bug; the user-prompts-in-mcp.log assumption;
+this Rule 4 classification carryover). All three were caught by
+the same verify-before-design discipline. The pattern is worth
+explicitly named here: when an architecture pivots (Path 2→3), all
+classifications inherited from the prior design must be re-examined
+under the new design, not carried forward by default.
+
+This pattern will be revisited on Days 4 and 5 as Rules 5 and 6
+are designed. Their event-time classification was reasoned through
+under the actual Path 2 design that still applies to them, and is
+defended in this amendment.
+
+---

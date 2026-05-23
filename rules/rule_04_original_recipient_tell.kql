@@ -6,8 +6,8 @@
 // 'original recipient:' (case-insensitive). This phrasing is a direct
 // mechanical artifact of the Tool Shadowing payload demonstrated in the
 // threat model report (calendar_sync.py) — when the LLM complies with
-// the poisoned instruction "move the original recipient to the email
-// body," the natural phrasing produced is exactly this structural tell.
+// the poisoned instruction to move the original recipient to the email
+// body, the natural phrasing produced is exactly this structural tell.
 //
 // Hypothesis: legitimate emails do not contain the phrase 'original
 // recipient:' at any position in the body. The phrase has no organic
@@ -21,14 +21,34 @@
 // OWASP Agentic Top 10: ASI02 (Tool Misuse), ASI09 (Human-Agent Trust).
 // MITRE ATLAS: AML.T0048 (External Harms).
 //
-// Scope: ClaudeDesktop only. ollmcp data lacks reliable event-time
-// (forwarder now() fallback, not source measurement) per SCHEMA_NOTES.md
-// AMENDMENT 2026-05-20 (ollmcp event-time limitation).
+// Classification: content/pattern rule (host-agnostic). Reasons about
+// CONTENT, not TIMING. Per SCHEMA_NOTES.md AMENDMENT 2026-05-23
+// (Rule 4 reclassification), this rule is in the same category as
+// Rules 1, 2, and 3 — content/pattern rules that consume both
+// ClaudeDesktop and ollmcp data validly.
 //
-// PII handling: reads CallParameters raw, consistent with SCHEMA_NOTES.md
-// AMENDMENT 2026-05-20 (Lab scope and PII handling boundary). Production
-// deployment against real user data requires pseudonymization layer
-// noted in that amendment.
+// Reclassification history: this rule was originally classified as
+// event-time (SCHEMA_NOTES.md AMENDMENT 2026-05-20) when it was
+// designed as a cross-table join against a user-intent table
+// (Path 2 architecture). The Path 3 pivot (DAY3_PLAN.md AMENDMENT
+// 2026-05-21) made the rule structurally content-only — intra-row
+// pattern detection on CallParameters.body, no cross-table join,
+// no temporal correlation. The classification was not updated at
+// the time of the pivot; the carryover was documented and corrected
+// by SCHEMA_NOTES.md AMENDMENT 2026-05-23.
+//
+// Detection logic: case-insensitive substring match for
+// 'original recipient:' anywhere in the body. Sufficient for the
+// payload variant demonstrated in the threat model and reproduced
+// in the V2 attack capture (2026-05-22, llama3.2 via ollmcp).
+// Broader attack variants using different phrasings (e.g.,
+// 'Originally to:', 'Forwarded from:') are not detected by this
+// rule and are noted as a known limitation in the Day-5 writeup.
+//
+// PII handling: reads CallParameters raw, consistent with
+// SCHEMA_NOTES.md AMENDMENT 2026-05-20 (Lab scope and PII handling
+// boundary). Production deployment against real user data requires
+// pseudonymization layer noted in that amendment.
 //
 // Architecture: intra-row pattern detection (Path 3). Original Path 2
 // design (cross-table correlation against user-intent table) was
@@ -36,10 +56,17 @@
 // from Claude Desktop local storage. Path 3 reads structured tool-call
 // data directly. See DAY3_PLAN.md AMENDMENT 2026-05-21.
 //
-// EventTime handling: isnotnull(EventTime) clause excludes pre-fix
-// historical artifacts from before the 2026-05-19 forwarder fix
-// (commit 2d03fef). Detection operates only on rows from the
-// working-forwarder pipeline.
+// Pre-fix historical-artifact handling: this rule does not include
+// event-time filters. The committed earlier version included
+// `where EventTime > ago(7d)` and `where isnotnull(EventTime)` to
+// exclude historical artifacts from before the 2026-05-19 forwarder
+// fix (commit 2d03fef). Those filters are removed per AMENDMENT
+// 2026-05-23 because (a) they are event-time logic in a non-
+// event-time rule, prohibited by the May 20 amendment, and (b) the
+// content match itself excludes pre-fix data — pre-2026-05-19
+// ClaudeDesktop rows do not contain the structural tell (Claude
+// refused the V1 payload in every captured run; no V2 attack was
+// ever produced on ClaudeDesktop).
 //
 // Design evolution: Rule 4 was originally designed with two sub-rules:
 // 4A (recipient/body entity mismatch) and 4B ('Original recipient:'
@@ -50,26 +77,17 @@
 // contain no recipient identifier. Rule 4A was rejected; the
 // preserved exploration artifact is at:
 //   docs/explorations/rule_04a_recipient_body_mismatch_REJECTED.kql
-// Rule 4 narrowed to the structural-tell detection only — grounded
-// in an artifact the attack itself produces, not in the absence of
-// a marker in legitimate emails.
 //
-// Detection logic: case-insensitive substring match for
-// 'original recipient:' anywhere in the body. Sufficient for the
-// payload variant demonstrated in the threat model. Broader attack
-// variants using different phrasings (e.g., 'Originally to:',
-// 'Forwarded from:') are not detected by this rule and are noted
-// as a known limitation in the Day-5 writeup.
-//
-// Authored: 2026-05-22 (Day 3 KQL design)
+// Authored: 2026-05-22 (Day 3 KQL design — V1, ClaudeDesktop-scoped,
+// event-time gated)
+// Modified: 2026-05-23 (Day 3 continuation — V2, content/pattern,
+// host-agnostic, event-time gating removed per SCHEMA_NOTES.md
+// AMENDMENT 2026-05-23)
 // =====================================================================
 
 MCPProtocolLogs_CL
 | where EventType == "ToolCallInvoked"
-| where HostApp == "ClaudeDesktop"
 | where ToolName == "send_email"
-| where isnotnull(EventTime)
-| where EventTime > ago(7d)
 | extend Recipient = tostring(CallParameters.recipient)
 | extend Body = tostring(CallParameters.body)
 | where isnotempty(Body)

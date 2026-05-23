@@ -119,7 +119,7 @@ def main():
     )
     if not ollmcp_source:
         print("ERROR: No ollmcp source configured in CONFIG.LOG_SOURCES")
-        returnp
+        return
 
     print(f"[PARSER_OLLMCP] Parsing {ollmcp_source['path']}")
     print()

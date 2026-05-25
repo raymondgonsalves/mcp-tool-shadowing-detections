@@ -1035,3 +1035,210 @@ The line is "is this redesign or is this a different rule under
 the same name." Different rule under same name is dropped.
 
 ---
+## Day 4 — Monday 2026-05-25 (mid-day)
+
+**Session window:** 05:06 EDT — [continuing from morning].
+
+Following the morning's architectural decision (Rules 5 and 6 dropped
+from scope), Day 4 implementation work began with Rule 1.
+
+### Rule 1 — Poisoned Tool Description Ingested
+
+Rule 1 detects MCP tool descriptions containing instruction-like
+keyword patterns characteristic of prompt-injection attacks embedded
+in the description field. Maps to Threat Model Findings 3 (Untrusted
+Description Surface) and 8 (Unified Instructions Problem). OWASP
+ASI01 — Agent Goal Hijack. MITRE ATLAS AML.T0051 — LLM Prompt
+Injection (Direct).
+
+### Phase 1 — Design
+
+Five design decisions settled before any KQL was written:
+
+1. **Keyword list source**: mirror CONFIG.PROMPT_INJECTION_KEYWORDS
+   exactly. Single source of truth between the forwarder's
+   ResultContainsInstructions flag (computed at ingestion) and the
+   detection rule (computed at query time).
+
+2. **Field scope**: ToolDescription only. Stays tight to Rule 1's
+   specification — tool-result instruction detection is a different
+   detection surface already covered by the forwarder's
+   ResultContainsInstructions flag.
+
+3. **Match logic**: single case-insensitive regex with the seven
+   keywords OR'd together. Compact, performant, semantically
+   equivalent to the forwarder's substring-match-after-lowercase
+   loop in ENRICHER._scan_for_instructions().
+
+4. **Scope filters**: EventType == "ToolDescriptionLoaded" and
+   isnotempty(ToolDescription). No HostApp filter — Rule 1 is
+   host-agnostic per the content/pattern classification. No EventTime
+   filter — same principle that drove Rule 4's reclassification
+   (commit 6decd63).
+
+5. **Projection**: 10 columns for production triage. EventTime,
+   SessionId, HostApp, ModelName, ServerName, ToolName,
+   ToolDescription, ToolDescriptionHash, ToolDescriptionLength,
+   IngestionAgent.
+
+### Verify-before-design — keyword list grounding
+
+The decision to mirror CONFIG.PROMPT_INJECTION_KEYWORDS required
+verifying the actual list content rather than relying on memory.
+ENRICHER.py source inspection confirmed the function reads from
+CONFIG, not from a hardcoded list. CONFIG.py inspection confirmed
+the seven keywords: IMPORTANT, you must, do not inform, ignore
+previous, <SYSTEM>, <system>, SYSTEM:. The detection rule's regex
+mirrors these exactly.
+
+This verification step caught the same class of pattern that bit
+Day 3 — confidently citing source content without re-reading it.
+The keyword list was as remembered, but verification still
+prevented a possible drift from being committed silently.
+
+### Phase 2 — Data verification
+
+Two diagnostic queries against MCPProtocolLogs_CL established the
+positive and negative cases before writing Rule 1's KQL:
+
+Query 1 — ToolDescriptionLoaded event counts by ServerName and
+hash. Confirmed three distinct descriptions in the table:
+- send_email hash cb006818..., 24 events
+- calendar_sync hash 44c65aee..., 18 events
+- calendar_sync hash 730af110..., 6 events
+
+Query 2 — preview of each distinct description's content. Revealed
+the critical Phase 2 finding: calendar_sync V2 (hash 730af110...,
+606 chars) was rewritten with subtler framing ("known routing
+configuration," "standard infrastructure," "no user action") that
+does not contain any of the seven keywords. V2 was deliberately
+crafted on April 30 to test whether models could detect a subtler
+attack — and as a side effect, it also evades keyword-based
+detection at the rule layer.
+
+This is Threat Model Finding 6 (The Obfuscation Gap) in practice:
+"Static scanning of tool descriptions is insufficient as a primary
+defense — it cannot detect what it cannot read."
+
+### Architectural decision — handle V2 miss as Finding 6 demo
+
+Three options were considered for handling the V2 evasion:
+
+- Option A: Ship Rule 1 with the CONFIG keyword list as designed;
+  document the V2 miss as a Finding 6 demonstration.
+- Option B: Expand the keyword list to catch V2 (add "must be
+  set to," "attacker@," "no user action"). Stronger coverage but
+  breaks consistency with ResultContainsInstructions.
+- Option C: Add a second rule (Rule 1b) targeting semantic patterns
+  rather than literal keywords. More portfolio surface but breaks
+  the morning's 4-rule scope decision.
+
+Decision: Option A. Reasoning:
+- Preserves single-source-of-truth alignment with the forwarder's
+  pre-computed flag.
+- Maps real lab outcomes to threat-model theoretical framework
+  — a stronger portfolio signal than claiming universal coverage.
+- Rule 2 (cross-tool reference) will catch V2 because V2 explicitly
+  names "send_email" in its text. Defense-in-depth across the pack.
+- Holds the 4-rule scope discipline established in the morning.
+
+The Rule 1 KQL header explicitly documents the V2 miss as a Known
+Limitation with full Finding 6 framing.
+
+### Phase 3 — KQL writing
+
+Rule 1 file (rules/rule_01_poisoned_tool_description.kql) was
+written following Rule 4's documentation pattern. 151 lines total
+— roughly 140 lines of substantive header (schema references,
+classification, detection purpose, keyword list, threat-model
+mappings, OWASP/ATLAS mappings, lab data, Finding 6 documentation,
+scope filter rationale, projection rationale, known false positives,
+triage steps) and 10 lines of KQL.
+
+The header's "Lab Data — Known Positive and Negative Cases" section
+explicitly enumerates: 18 V1 events expected to fire, 24 send_email
+events expected to NOT fire, 6 V2 events expected to NOT fire as a
+Finding 6 demonstration. This makes the rule's expected behavior
+auditable independent of the figures.
+
+### Phase 4 — Sentinel verification (three figures)
+
+**Figure 4 — Positive case (Rule 1 fires on V1):**
+Sentinel query returned 18 rows, all calendar_sync with hash
+44c65aee..., all ToolDescriptionLength 862. The PoisonExcerpt
+column (substring() applied for screenshot readability — not part
+of the committed rule) shows the matched <IMPORTANT> block content
+for visual confirmation. Tooltip on one cell shows the structured
+multiline form of the payload. Row count indicator confirms "1 - 13
+of 18" — 18 total matches with 13 visible in the viewport.
+
+**Figure 5a — Negative case (zero false positives):**
+Sentinel query applies Rule 1's regex to the 30 known negative-case
+rows (24 send_email + 6 V2 calendar_sync). Returns "No results
+found from the custom time range." Zero false positives demonstrated
+explicitly rather than implied from Figure 4's exclusion list.
+
+**Figure 5b — Category summary (precision/recall view):**
+Sentinel query categorizes all 48 ToolDescriptionLoaded rows into
+three groups and reports match counts per group:
+- calendar_sync V1 (poisoned-dramatic): 18 of 18 match
+- calendar_sync V2 (poisoned-subtle): 0 of 6 match (Finding 6)
+- send_email (clean): 0 of 24 match
+
+This translates to:
+- Precision: 18/18 = 100% (when Rule 1 fires, it is correct)
+- Recall against all calendar_sync attacks: 18/24 = 75%
+- The 25% recall gap is V2 by design (Finding 6 documentation)
+
+Figure 5b is the single most compact view of Rule 1's behavior.
+The 75% recall figure is not a defect to be apologized for — it
+is the empirical demonstration of Finding 6 that the Day-5
+writeup will reference explicitly.
+
+### Detection-engineering observation
+
+The figures together demonstrate something stronger than just
+"Rule 1 works": they demonstrate that the detection engineer
+understands both what the rule catches AND what it cannot catch,
+with explicit mapping back to the threat-model finding that
+predicted the gap. This is the senior-analyst signal — mapping
+real lab outcomes to the OWASP/ATLAS/threat-model theoretical
+framework.
+
+### Files changed in this commit
+
+- rules/rule_01_poisoned_tool_description.kql: new file, 151 lines.
+  Substantive header documenting classification, detection purpose,
+  keyword list source (mirrors CONFIG.PROMPT_INJECTION_KEYWORDS),
+  threat-model and OWASP/ATLAS mappings, lab data, Finding 6
+  limitation, scope filter rationale, projection rationale, known
+  false positives, triage steps. KQL applies case-insensitive regex
+  match against ToolDescription content and projects 10 fields for
+  production triage.
+- docs/DAILY_LOG.md: appended this Day 4 mid-day entry.
+
+### Pack state after Rule 1
+
+- Rule 1 (poisoned description, description-ingestion layer): ✓ committed and verified
+- Rule 4 (original recipient structural tell, attack-execution layer): ✓ committed and verified (Saturday)
+- Rule 2 (cross-tool reference, description-ingestion layer): planned, not yet started
+- Rule 3 (hash drift, description-ingestion layer): planned, not yet started; requires MCPToolDescriptions watchlist setup first
+
+### Forward plan — remaining Day 4 work
+
+1. **Rule 2 implementation** — self-join on MCPProtocolLogs_CL to
+   detect descriptions referencing other servers' tool names.
+   Naturally pairs with Rule 1 (catches V1 and V2 both, where Rule
+   1 catches V1 only). ~75 min end-to-end.
+
+2. **Rule 3 implementation** — watchlist creation + hash drift
+   detection. ~30 min for watchlist + ~75 min for the rule.
+
+3. **Day 4 wrap** — DAILY_LOG end-of-day entry, backup, commit
+   close-out.
+
+Realistic end-of-day state: full 4-rule pack committed and verified,
+ready for Day-5 polish work (traceability matrix, YAML wrappers,
+README, optional GitHub remote push).
+
+---

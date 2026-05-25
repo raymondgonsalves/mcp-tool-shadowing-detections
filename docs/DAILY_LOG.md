@@ -893,3 +893,145 @@ Path 2 plan. Same check that should have happened on May 21 for
 Rule 4.
 
 ---
+## Day 4 — Monday 2026-05-25 (morning)
+
+**Session window:** 05:06 EDT — [in progress].
+
+Yesterday (Sunday 2026-05-24) was a deliberate no-work day after
+Day 3's long session. Returning to Day 4 with fresh head.
+
+### Architectural decision — Rules 5 and 6 dropped from pack scope
+
+The detection pack scope is reduced from six rules to four rules.
+Rules 5 (MCP host outbound anomaly) and Rule 6 (Audit log integrity
+check) are removed from scope based on data-availability investigation.
+
+Full architectural reasoning is recorded in SCHEMA_NOTES.md
+AMENDMENT 2026-05-25 (Rules 5 and 6 dropped from pack scope). The
+amendment is the authoritative source for this decision; this log
+entry records the morning's decision conversation in narrative form.
+
+### Decision conversation (chronological)
+
+Morning began by considering Rule 5 as the next rule to implement.
+The complexity-ordering analysis from Saturday placed Rule 5 as
+the hardest of the remaining rules, with two known concerns:
+
+1. **Microsoft Defender for Endpoint telemetry** required for Rule
+   5's join against DeviceProcessEvents and DeviceNetworkEvents is
+   probably not present in the lab workspace. The plan was to verify
+   this with `search "DeviceProcessEvents"` queries before committing
+   to the rule.
+
+2. **Lab MCP servers don't generate outbound network traffic** —
+   raised as a sharp question this morning. Re-reading the threat
+   model report's calendar_sync.py and send_email.py confirmed both
+   are intentional stubs that print to stdout and return synthetic
+   dictionaries. Neither makes external API calls.
+
+The second concern alone is sufficient to block Rule 5 — even with
+MDE telemetry present, Rule 5's detection signature (MCP host makes
+outbound connection to new domain shortly after tool call) has no
+positive case in the lab data. The attack architecture this lab
+demonstrates does not produce post-execution outbound traffic.
+
+Decision: drop Rule 5 from scope.
+
+Follow-up question raised in the same conversation: **does Rule 6
+have the same problem?** Rule 6 was already known to have a Path 3
+data-availability issue (user-prompt data not accessible, documented
+in DAY3_PLAN.md AMENDMENT 2026-05-21 and SCHEMA_NOTES.md AMENDMENT
+2026-05-23).
+
+Three redesign options for Rule 6 under Path 3 were considered:
+- Synthesize user intent from ollmcp transcripts (Y1)
+- Within-session anomaly detection (Y2)
+- Reframe as schema-integrity meta-detection (Y3)
+
+Option Y3 is implementable against existing data but produces a
+meaningfully different detection signature than the original Rule
+6 design. Combined with the redesign + verification work that would
+be required, the decision is to drop Rule 6 rather than ship a
+redesigned-from-scratch rule under the same name.
+
+Decision: drop Rule 6 from scope.
+
+### Final pack composition
+
+The detection pack ships four rules:
+
+- Rule 1 — Poisoned tool description ingested (description-ingestion layer)
+- Rule 2 — Cross-tool reference in description (description-ingestion layer)
+- Rule 3 — Tool description hash drift (description-ingestion layer)
+- Rule 4 — Original recipient structural tell (attack-execution layer)
+
+This is a coherent defense-in-depth pack: three rules catch the
+attack before execution; one rule catches it during execution. All
+four are verifiable against data the lab actually produces.
+
+### What was NOT done
+
+- No exploration files created for Rules 5 and 6 (deliberate
+  decision). The architectural rationale lives in SCHEMA_NOTES.md
+  AMENDMENT 2026-05-25; no further documentation produced.
+- No re-amendment of the Project Plan docx. The plan was the
+  starting reference; the amendment trail in SCHEMA_NOTES.md is
+  the authoritative current state.
+
+### Updated Day 4 plan (revised from Saturday's resume plan)
+
+Saturday's DAILY_LOG resume plan named Rules 5 and 6 as Day 4
+work. With both rules dropped, Day 4 becomes:
+
+1. **Commit the Rules 5/6 drop decision** — SCHEMA_NOTES.md
+   amendment + this DAILY_LOG entry, single commit.
+
+2. **Rule 1 design and implementation** — Poisoned tool description
+   regex detection. Reads ToolDescription content from
+   MCPProtocolLogs_CL, matches against instruction-like keyword
+   patterns (the same keyword list ENRICHER.py uses for the
+   ResultContainsInstructions flag). ~90 min end-to-end including
+   commit and Sentinel verification.
+
+3. **Rule 2 design and implementation** — Cross-tool reference
+   detection. Self-join on MCPProtocolLogs_CL to find descriptions
+   referencing other servers' tools. ~75 min end-to-end.
+
+4. **Rule 3 design and implementation** — Tool description hash
+   drift. Requires creating an MCPToolDescriptions watchlist first
+   (Project Plan §3 indicates this should have been a Day-1 task
+   but was deferred when Day-3 work prioritized Rule 4). ~75 min
+   for the rule + ~30 min for watchlist setup.
+
+Realistic completion: all three rules end-to-end by late afternoon.
+
+### Day 5 implications
+
+Saturday's wrap noted Day 5 polish work (traceability matrix, YAML
+rule wrappers, README, optional GitHub remote push). With the
+4-rule scope locked, Day 5's traceability matrix becomes a 4x4
+mapping instead of 6x6 — simpler and faster to produce. Day-5
+writeup must include the scope-decision rationale in introduction
+or methodology.
+
+### Process note — when to drop vs. when to redesign
+
+Today's decision involved a real architectural question: when a
+rule's original design encounters a data-availability blocker,
+when do you redesign it under the new architecture (as Rule 4 was
+on May 21) versus drop it from scope (as Rules 5 and 6 today)?
+
+Working principle: redesign when the new design preserves the
+rule's detection signature against the same threat-model finding
+using only the architectural-pivot's new data shape. Drop when
+the redesign requires substantive reframing of what the rule
+detects.
+
+Rule 4 under Path 3 still detects the structural tell in
+CallParameters.body — same signature, intra-row instead of
+cross-table. Rule 6 under Path 3 (Option Y3) would detect schema
+integrity gaps instead of user-intent gaps — different signature.
+The line is "is this redesign or is this a different rule under
+the same name." Different rule under same name is dropped.
+
+---

@@ -9,3 +9,4 @@ infra/dcr.compiled.json
 
 # Diagnostic capture of live DCR state — point-in-time snapshot, not source
 infra/dcr_current_raw.json
+.next-session-resume.txt

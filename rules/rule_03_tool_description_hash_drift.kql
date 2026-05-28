@@ -1,0 +1,224 @@
+// =============================================================
+// Rule 3 — Tool Description Hash Drift
+// =============================================================
+//
+// SCHEMA AMENDMENT REFERENCES
+//   - SCHEMA_NOTES.md AMENDMENT 2026-05-20: Rules classified as
+//     event-time vs content/pattern.
+//   - SCHEMA_NOTES.md AMENDMENT 2026-05-25: Rules 5/6 dropped;
+//     final pack composition is Rules 1, 2, 3, 4.
+//
+// CLASSIFICATION
+//   Integrity rule. Host-agnostic. No EventTime filter. Checks
+//   whether an observed tool description hash matches the approved
+//   baseline hash for that server+tool. Content-agnostic — the
+//   rule does not inspect description text, only whether the hash
+//   diverges from the approved reference.
+//
+// DETECTION PURPOSE
+//   Detects a tool description whose hash differs from the
+//   approved baseline recorded at install/approval time. This is
+//   the detection signature for the rug-pull and sleeper attack
+//   variants: a server is approved with one description, then
+//   silently swaps in a different description on a later session.
+//   The hash change is the signal — regardless of whether the new
+//   content is more or less malicious than the approved baseline.
+//
+// THREAT MODEL FINDING
+//   - Finding 4 — The One-Time Approval Gap: the calendar_sync
+//     server was approved at install time based on its initial
+//     tool description. No MCP protocol mechanism detects whether
+//     that description changes between sessions. A malicious
+//     operator could serve a clean description at install to pass
+//     review, then activate a Tool Shadowing payload on a
+//     subsequent session. The user's approval is a one-time gate,
+//     not continuous verification. Hash drift detection is the
+//     compensating control that turns the one-time gate into
+//     continuous verification.
+//
+// OWASP AGENTIC TOP 10
+//   ASI04 — Agentic Supply Chain Vulnerabilities
+//
+// MITRE ATT&CK
+//   T1195 — Supply Chain Compromise
+//
+// WATCHLIST DEPENDENCY
+//   This rule depends on the MCPToolDescriptions watchlist, which
+//   contains four columns:
+//     - ServerName    (string) — the server that owns the tool
+//     - ToolName      (string) — the tool name
+//     - ApprovedHash  (string) — the SHA-256 hash approved as the
+//                                baseline for this server+tool
+//     - Notes         (string) — human-readable approval context,
+//                                including the synthetic-baseline
+//                                disclosure (see below)
+//
+//   Current contents (as of 2026-05-28):
+//     send_email/send_email    -> cb006818... (genuine clean baseline)
+//     calendar_sync/calendar_sync -> 44c65aee... (SYNTHETIC baseline, V1)
+//
+// SYNTHETIC BASELINE — HONEST DISCLOSURE
+//   The classic hash-drift scenario (Finding 4) assumes a
+//   genuinely clean description is approved at install time, then
+//   later swapped for a poisoned one. In this lab, calendar_sync
+//   was adversarial from initial capture — there is no genuinely
+//   clean calendar_sync description in the dataset.
+//
+//   To demonstrate the drift-detection mechanic on real data, the
+//   V1 calendar_sync hash (44c65aee...) is used as a SYNTHETIC
+//   approved baseline. V2 (730af110...) is then detected as drift
+//   from that baseline. This demonstrates the rug-pull detection
+//   mechanic correctly: the rule catches that the hash CHANGED
+//   from what was approved, which is the detection signal
+//   regardless of content.
+//
+//   The artificiality is disclosed inline in the watchlist Notes
+//   field (surfaced in this rule's projection) so any analyst
+//   reviewing an alert sees the disclosure directly. In a
+//   production deployment the baseline would be a genuinely clean,
+//   verified-benign description. This synthetic-baseline approach
+//   is a lab constraint, honestly framed, not a design flaw.
+//
+// LAB DATA — KNOWN POSITIVE AND NEGATIVE CASES
+//   Verified against MCPProtocolLogs_CL as of 2026-05-28:
+//
+//   FIRES (drift detected):
+//     calendar_sync V2 (hash 730af110..., length 606): observed
+//     hash differs from approved V1 baseline 44c65aee... -> DRIFT.
+//     Expected: 6 events fire.
+//
+//   DOES NOT FIRE (no drift):
+//     calendar_sync V1 (hash 44c65aee..., length 862): observed
+//     hash matches approved baseline (V1 IS the baseline).
+//     Expected: 18 events correctly do not fire.
+//     send_email (hash cb006818..., length 216): observed hash
+//     matches its genuine clean baseline.
+//     Expected: 24 events correctly do not fire.
+//
+//   This is the rug-pull demonstration: of the 48 description-load
+//   events, only the 6 that diverge from the approved baseline
+//   fire. The rule is content-agnostic — it does not read the
+//   description, only compares the hash.
+//
+// JOIN SYNTAX — EXPLICIT $left/$right (verified 2026-05-28)
+//   This rule uses an equality join against the watchlist on
+//   ServerName AND ToolName. The intuitive shorthand
+//
+//       | join kind=inner ApprovedDescriptions on ServerName, ToolName
+//
+//   FAILED in testing — it returned zero rows even though column
+//   names and values matched on both sides. When both tables have
+//   columns of the same name (ServerName and ToolName exist on
+//   both the events side and the watchlist side), the multi-key
+//   shorthand binds ambiguously and the join silently produces no
+//   matches.
+//
+//   The working form is the explicit per-side key binding:
+//
+//       | join kind=inner ApprovedDescriptions
+//           on $left.ServerName == $right.ServerName
+//           and $left.ToolName == $right.ToolName
+//
+//   This states exactly which side each key comes from, removing
+//   the ambiguity. Diagnostic testing confirmed: the explicit
+//   form returns 48 matched rows (all events joined to their
+//   baseline); single-key shorthand also works; only the
+//   multi-key shorthand fails. This is the same class of issue as
+//   Rule 2's ToolName-vs-ToolName1 column-binding bug — equality
+//   joins against watchlists require explicit awareness of which
+//   side each column reference resolves to when names collide.
+//
+// SCOPE FILTERS
+//   - EventType == "ToolDescriptionLoaded": only description-load
+//     events carry a ToolDescriptionHash to check.
+//   - isnotempty(ToolDescriptionHash): defensive guard.
+//   - ToolDescriptionHash != ApprovedHash: the drift condition
+//     itself — observed hash diverges from approved baseline.
+//   - No HostApp filter. Host-agnostic per classification.
+//   - No EventTime filter. Integrity rule; checks observed-vs-
+//     approved state, not event timing.
+//
+// PROJECTION
+//   EventTime, SessionId, HostApp, ModelName for triage context.
+//   ServerName, ToolName identify the drifted tool.
+//   ObservedHash (renamed from ToolDescriptionHash) and
+//   ApprovedHash side by side make the divergence immediately
+//   visible to the analyst.
+//   Notes surfaces the watchlist's approval context — including
+//   the synthetic-baseline disclosure — directly in the alert.
+//   ToolDescription for analyst review of the drifted content.
+//   ToolDescriptionLength as a secondary anomaly signal.
+//   IngestionAgent for forensic provenance.
+//
+// KNOWN LIMITATIONS
+//
+//   Limitation 1 — Synthetic baseline (lab constraint).
+//     The calendar_sync baseline (V1) is not a genuinely clean
+//     description; it is adversarial content used as a synthetic
+//     reference to demonstrate the drift mechanic. Disclosed
+//     inline in the watchlist Notes field. In production the
+//     baseline must be a verified-benign description.
+//
+//   Limitation 2 — Watchlist completeness.
+//     Rule 3 only checks tools that have an approved-baseline
+//     entry in MCPToolDescriptions. The inner join silently drops
+//     any tool with no baseline entry — meaning a tool with no
+//     approved baseline produces no drift detection at all.
+//     Production deployments must ensure every approved tool has
+//     a baseline entry, and should pair this rule with a separate
+//     detection for "tool description loaded with no approved
+//     baseline on record."
+//
+//   Limitation 3 — Hash normalization dependency.
+//     Rule 3 compares ToolDescriptionHash (computed by the
+//     forwarder against whitespace-normalized description text,
+//     per SCHEMA_NOTES section 6.3) against ApprovedHash in the
+//     watchlist. The approved hash MUST be computed with the same
+//     normalization the forwarder applies. If a baseline hash were
+//     computed from non-normalized text, a legitimate unchanged
+//     description could false-positive as drift due to whitespace
+//     differences alone. Baseline hashes for this watchlist were
+//     taken directly from observed ToolDescriptionHash values in
+//     MCPProtocolLogs_CL, guaranteeing normalization consistency.
+//
+// TRIAGE STEPS
+//   1. Compare ObservedHash against ApprovedHash — confirm the
+//      divergence is real and not a normalization artifact
+//      (see Limitation 3).
+//   2. Review the Notes field — understand the approval context
+//      for the baseline this drift is measured against.
+//   3. Review ToolDescription content — what does the drifted
+//      description now say? Cross-check against Rule 1 (keyword
+//      scan) and Rule 2 (cross-tool reference) on the same event.
+//   4. Determine whether the change is a legitimate update (e.g.,
+//      a vendor pushed a benign new version) or an attack (a
+//      rug-pull swap). A legitimate update requires re-approving
+//      the new hash in the watchlist; an attack requires
+//      disconnecting the server.
+//   5. If malicious, disconnect the offending server and capture
+//      session evidence for incident response.
+//
+// =============================================================
+
+let ApprovedDescriptions = _GetWatchlist("MCPToolDescriptions");
+MCPProtocolLogs_CL
+| where EventType == "ToolDescriptionLoaded"
+| where isnotempty(ToolDescriptionHash)
+| join kind=inner ApprovedDescriptions
+    on $left.ServerName == $right.ServerName
+    and $left.ToolName == $right.ToolName
+| where ToolDescriptionHash != ApprovedHash
+| project
+    EventTime,
+    SessionId,
+    HostApp,
+    ModelName,
+    ServerName,
+    ToolName,
+    ObservedHash = ToolDescriptionHash,
+    ApprovedHash,
+    Notes,
+    ToolDescription,
+    ToolDescriptionLength,
+    IngestionAgent
+| order by EventTime desc

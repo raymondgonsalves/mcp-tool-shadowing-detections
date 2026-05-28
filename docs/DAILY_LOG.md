@@ -1842,3 +1842,273 @@ in scope today.
   that wasn't in the original scope.
 
 ---
+## Day 7 — Thursday 2026-05-28
+
+**Session window:** 05:11 EDT — [in progress].
+
+Resumed after the Rule 2 commit (ccb0808) landed earlier this
+session. Today's work: Rule 3 (the final rule), which completes
+the four-rule pack.
+
+Note on the start: the session opened by resolving a leftover
+question — whether Figure 8 (a Rule 2 category summary) had been
+captured. It had not; it had been deliberately skipped on Day 6.
+Confirmed Rule 2 is completely demonstrated by Figure 7 alone, and
+the skip stands. Then the Rule 2 commit (which had been prepared
+on Day 6 but never committed before stopping) was landed as
+commit ccb0808.
+
+### Rule 3 — Tool Description Hash Drift
+
+Rule 3 detects a tool description whose hash differs from the
+approved baseline recorded at install/approval time — the
+detection signature for rug-pull and sleeper attack variants.
+Maps to Threat Model Finding 4 (The One-Time Approval Gap).
+OWASP ASI04 — Agentic Supply Chain Vulnerabilities. MITRE ATT&CK
+T1195 — Supply Chain Compromise.
+
+### Phase 1 — Design, including the synthetic-baseline wrinkle
+
+Rule 3's premise depends on a notion of "approved baseline" — a
+known-good hash to compare observed hashes against. But the lab's
+calendar_sync was adversarial from initial capture; there is no
+genuinely clean calendar_sync description in the dataset. This is
+a conceptual wrinkle the other three rules did not have.
+
+Three baseline options were considered:
+
+- Option A: Baseline on send_email only. Demonstrates the rule
+  NOT firing (send_email never drifts). Weak — a rule that
+  detects nothing on the data is a poor demonstration.
+- Option B (chosen): Use V1's hash as a SYNTHETIC approved
+  baseline. V2 is then detected as drift from V1. Demonstrates
+  the drift-detection mechanic on real data (both V1 and V2 are
+  real captured events). The artificiality (V1 isn't genuinely
+  clean) is honestly disclosable.
+- Option C: Synthesize a clean calendar_sync baseline hash with
+  no corresponding captured event. More realistic
+  (clean->poisoned) but the baseline is a hash never actually
+  observed in the lab.
+
+Option B chosen for strongest real-data demonstration. The
+synthetic-baseline artificiality is disclosed THREE ways: in the
+rule header (dedicated section), in the watchlist Notes field
+(inline, surfaced in every alert), and will be in the Day-5
+writeup. The honest framing: V1 demonstrates the drift MECHANIC
+correctly (hash changed from approved = detection signal,
+content-agnostic); production would use a genuinely clean
+baseline.
+
+### Phase 1 — Watchlist Notes field decision
+
+The watchlist schema was upgraded from three columns
+(ServerName, ToolName, ApprovedHash) to four, adding Notes.
+The Notes field carries the synthetic-baseline disclosure inline,
+so an analyst reviewing an alert sees "V1 used as synthetic
+baseline" directly in the data rather than needing to read
+external docs. Notes was also included in Rule 3's projection so
+it appears in every detection result. This turns a potential
+"why is an attack hash the approved baseline?" confusion into a
+preemptive answer at the data layer — a deliberate forensic-
+honesty design choice.
+
+### Phase 2 — Watchlist creation and the full-hash requirement
+
+Building the MCPToolDescriptions watchlist required the exact
+full 64-character SHA-256 hashes (truncated forms risk collision
+and would not match the join). Pulled the full hashes from
+MCPProtocolLogs_CL:
+
+- send_email: cb006818569a05e39c28a57f3852e1c43aa1d119c0d2b91446a41749b49db47f (216 chars)
+- calendar_sync V1: 44c65aee45b061d11199964aaf8a042d102b7491d4cbe86b074af6a06539c73c (862 chars)
+- calendar_sync V2: 730af110b70716dabbad90a44f6f0a7f02456355aba01fd819f358ada04b507e (606 chars)
+
+Watchlist contents: send_email -> its clean hash; calendar_sync ->
+V1 hash (synthetic baseline). V2 is deliberately NOT in the
+watchlist — it is what gets detected as drift.
+
+Watchlist created in the Defender portal (same flow as
+MCPToolNames on Day 4). Schema verified: ServerName, ToolName,
+ApprovedHash, Notes columns all present, plus Sentinel metadata.
+
+### Phase 2 — Join-syntax debugging (the day's main detour)
+
+The initial drift query produced ZERO rows when 6 were expected.
+Applied the diagnostic-first discipline rather than guessing.
+
+Diagnostic chain:
+- Watchlist schema query: confirmed columns ServerName, ToolName,
+  ApprovedHash, Notes all present and correctly typed. Eliminated
+  "missing watchlist" and "wrong column names" hypotheses.
+- Join-count-before-filter query: returned ZERO. The join itself
+  produced no matched rows — not the drift filter.
+- Watchlist value preview: ServerName/ToolName values were CLEAN
+  (send_email, calendar_sync — no quotes, no whitespace).
+  Eliminated the value-corruption hypothesis (which had been my
+  leading guess — I was wrong).
+- Events value preview: also clean. Values matched between
+  watchlist and events.
+
+By elimination, the problem was the join SYNTAX. Two tests
+settled it:
+- Explicit $left/$right two-key join: returned 48 (works).
+- Single-key shorthand (on ServerName): returned 48 (works).
+- Only the original multi-key shorthand (on ServerName, ToolName)
+  failed with zero rows.
+
+Root cause: when both tables have columns of the same name
+(ServerName AND ToolName exist on both sides), the multi-key
+shorthand `on ServerName, ToolName` binds ambiguously and
+silently produces no matches. The explicit form
+`on $left.ServerName == $right.ServerName and $left.ToolName ==
+$right.ToolName` removes the ambiguity.
+
+This is the same CLASS of bug as Rule 2's ToolName-vs-ToolName1
+column-binding issue: equality joins against watchlists require
+explicit awareness of which side each column reference resolves
+to when names collide. Documented in Rule 3's header as a
+teachable KQL gotcha.
+
+### Working principle reinforced
+
+KQL joins where both sides share column names need explicit
+per-side key binding ($left./$right.) — the convenient shorthand
+fails silently when names collide. This bit the project twice
+(Rule 2 cross-join, Rule 3 equality join). The diagnostic-first
+discipline (isolate the failing layer with read-only queries
+before changing anything) resolved both cleanly. Guessing would
+have produced a working-by-accident query whose mechanics we
+could not explain in the writeup.
+
+### Phase 3 — Rule 3 KQL writing
+
+Rule 3 file (rules/rule_03_tool_description_hash_drift.kql) was
+written following the established documentation pattern. 224 lines
+— substantial header (classification as INTEGRITY rule — a new
+category distinct from Rules 1/2's content/pattern; detection
+purpose; threat-model mapping; OWASP/ATT&CK mappings; watchlist
+dependency; synthetic-baseline honest disclosure; lab data;
+the join-syntax gotcha with the verified explicit form; scope
+filters; projection rationale; three known limitations; five
+triage steps) plus the KQL.
+
+The committed rule keeps the full 12-field projection for
+consistency with Rules 1 and 2 (house style). The Figure 9
+screenshot query used a trimmed 5-field projection (ServerName,
+ToolName, ObservedHash, ApprovedHash, Notes) for clarity —
+committed rule and demonstration query are allowed to differ,
+same pattern as Rule 1's substring excerpt and Rule 2's
+ReferenceExcerpt.
+
+### Phase 4 — Sentinel verification (Figure 9)
+
+Sentinel query returned 6 rows, all calendar_sync, all showing
+ObservedHash 730af110... (V2) diverging from ApprovedHash
+44c65aee... (V1 baseline). The two hashes are visibly different
+side by side. The Notes column displays the synthetic-baseline
+disclosure inline; the tooltip shows the full disclosure text.
+Query ran in 0s 530ms.
+
+Verification confirms:
+- 6 V2 events fire (drift from baseline)
+- 18 V1 events correctly do not fire (V1 IS the baseline)
+- 24 send_email events correctly do not fire (matches clean baseline)
+
+This is the rug-pull demonstration: of 48 description-load events,
+only the 6 that diverge from the approved baseline fire. The rule
+is content-agnostic — it compares hashes, not text.
+
+Figure 9 was captured from the Microsoft Sentinel Logs surface
+(Figures 4-7 were from the Log Analytics / Defender Logs blade).
+Both query the same workspace; results are identical. A one-line
+writeup footnote will note this for consistency.
+
+### Three known limitations documented (Rule 3 header)
+
+1. Synthetic baseline — V1 isn't genuinely clean (lab constraint,
+   disclosed inline in Notes).
+2. Watchlist completeness — the inner join silently drops tools
+   with no baseline entry; production needs a companion detection
+   for "description loaded with no approved baseline on record."
+3. Hash normalization dependency — ApprovedHash must be computed
+   with the same whitespace normalization the forwarder applies
+   (per SCHEMA_NOTES 6.3). Baseline hashes were taken directly
+   from observed ToolDescriptionHash values, guaranteeing
+   normalization consistency.
+
+### Files changed in this commit
+
+- rules/rule_03_tool_description_hash_drift.kql: new file, 224
+  lines. Integrity rule detecting hash drift from approved
+  baseline. Header documents classification, threat-model mapping
+  (Finding 4), OWASP ASI04 / ATT&CK T1195, watchlist dependency,
+  synthetic-baseline disclosure, the explicit-join-syntax gotcha,
+  scope filters, projection rationale, three known limitations,
+  five triage steps. KQL uses explicit $left/$right equality join
+  against MCPToolDescriptions watchlist, drift condition
+  ToolDescriptionHash != ApprovedHash, 12-field projection
+  including ObservedHash/ApprovedHash side by side and Notes.
+
+- watchlists/mcp_tool_descriptions.csv: new file. Four-column
+  watchlist (ServerName, ToolName, ApprovedHash, Notes) with two
+  baseline rows. Notes field carries the synthetic-baseline
+  disclosure inline. Tracked in git for reproducibility.
+
+- docs/DAILY_LOG.md: appended this Day 7 entry.
+
+### PACK COMPLETE — all four rules committed and verified
+
+- Rule 1 (poisoned description, description-ingestion layer):
+  Findings 3, 8; ASI01; ATLAS AML.T0051. Verified Figures 4/5a/5b.
+- Rule 2 (cross-tool reference, description-ingestion layer):
+  Finding 2; ASI01; ATLAS AML.T0053. Verified Figure 7.
+- Rule 3 (hash drift, integrity layer): Finding 4; ASI04;
+  ATT&CK T1195. Verified Figure 9.
+- Rule 4 (original recipient tell, attack-execution layer):
+  Findings 13/15/17; ASI02/ASI09; ATLAS AML.T0048. Verified
+  Figures 2/3.
+
+Defense-in-depth across layers: three description-ingestion-layer
+rules (1, 2, 3) catch the attack before execution via different
+signatures (keyword, cross-reference, hash drift); one
+execution-layer rule (4) catches it at tool invocation. Coverage
+of both V1 and V2 calendar_sync payloads across the pack:
+- V1: caught by Rules 1, 2, and (as baseline) referenced by 3
+- V2: missed by Rule 1 (Finding 6), caught by Rule 2, caught by
+  Rule 3 (as drift), caught by Rule 4 (at execution)
+
+No single point of failure for the documented attack.
+
+### Forward plan — Day-5 polish (now the remaining work)
+
+With all four rules committed and verified, remaining work is
+documentation and packaging:
+
+1. Traceability matrix — 4x mapping (Threat Model Finding ->
+   OWASP -> MITRE -> Rule -> Figure). The senior-engineer
+   artifact.
+2. README — architecture diagram, links to threat model report
+   and Notion portfolio, deployment instructions, the scope-
+   decision rationale (4-rule pack, V1/V2/V3 genealogy).
+3. Optional: YAML/ARM rule wrappers (detection-as-code).
+4. Optional: GitHub remote push.
+5. Optional: video walkthrough.
+
+### Process notes
+
+- The 2-day break (Day 4 -> Day 6) and the structure of working
+  in fresh sessions continued to pay off. Today's join-syntax
+  debugging required clear-headed diagnostic discipline; it would
+  have been error-prone if attempted while depleted.
+- The synthetic-baseline question was the right thing to slow
+  down on. Rushing Rule 3 without confronting "what does drift
+  mean when calendar_sync was never clean?" would have produced
+  either a contrived demo or a dishonest one. The Notes-field
+  disclosure turned the constraint into a demonstration of
+  understanding.
+- Two watchlists now exist (MCPToolNames for Rule 2,
+  MCPToolDescriptions for Rule 3), demonstrating the Sentinel
+  watchlist pattern twice. Both are tracked in the repo as CSVs
+  for reproducibility.
+
+---

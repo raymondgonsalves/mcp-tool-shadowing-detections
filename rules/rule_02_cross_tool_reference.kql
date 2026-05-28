@@ -1,0 +1,257 @@
+// =============================================================
+// Rule 2 — Cross-Tool Reference in Description
+// =============================================================
+//
+// SCHEMA AMENDMENT REFERENCES
+//   - SCHEMA_NOTES.md AMENDMENT 2026-05-20: Rules classified as
+//     event-time vs content/pattern.
+//   - SCHEMA_NOTES.md AMENDMENT 2026-05-25: Rules 5/6 dropped;
+//     final pack composition is Rules 1, 2, 3, 4.
+//
+// CLASSIFICATION
+//   Content/pattern rule. Host-agnostic. No EventTime filter.
+//   Operates on the textual content of tool descriptions at the
+//   moment of ingestion, joined against a watchlist of known tool
+//   names to detect descriptions that reference tools owned by a
+//   different server.
+//
+// DETECTION PURPOSE
+//   Detects MCP tool descriptions whose text references the name
+//   of a tool owned by a DIFFERENT server. In a benign MCP
+//   environment, a tool description describes only what its own
+//   tool does. When a description names another connected tool —
+//   particularly a high-privilege tool like send_email — it is
+//   attempting to influence the LLM's reasoning about that other
+//   tool. This is the protocol-level signature of the Tool
+//   Shadowing attack class.
+//
+// WATCHLIST DEPENDENCY
+//   This rule depends on the MCPToolNames watchlist, which
+//   contains two columns:
+//     - ToolName    (string) — the name of a known MCP tool
+//     - ServerName  (string) — the server that owns that tool
+//
+//   Current contents (as of 2026-05-25):
+//     ToolName       ServerName
+//     send_email     send_email
+//     calendar_sync  calendar_sync
+//
+//   The watchlist is the authoritative list of "known tools" the
+//   rule treats as legitimate referents. A description matching
+//   any ToolName from the watchlist is flagged as suspicious if
+//   and only if the description's own ServerName differs from
+//   the watchlist row's ServerName.
+//
+// WHY A WATCHLIST RATHER THAN SELF-JOIN OR HARDCODE
+//   Three design options were considered during Phase 1:
+//     - Option A: Self-join MCPProtocolLogs_CL against itself to
+//       discover tool names dynamically. Pro: no external state.
+//       Con: more complex KQL; risks edge cases on common
+//       substrings.
+//     - Option B: Watchlist (this design). Pro: explicit human
+//       authority over what counts as a tool name; reusable
+//       pattern aligned with SC-200 detection practices; consistent
+//       with Rule 3's watchlist dependency. Con: requires
+//       maintenance when new tools are added.
+//     - Option C: Hardcode the two known lab tool names directly
+//       in KQL. Pro: simplest. Con: reads as lab-only; not
+//       generalizable.
+//
+//   Option B was chosen. The watchlist pattern is the production
+//   standard for Sentinel detection rules requiring reference
+//   data, and Rule 3 will also use a watchlist (MCPToolDescriptions
+//   for hash drift). Building two watchlists demonstrates
+//   competence with this Sentinel feature category.
+//
+// THREAT MODEL FINDING
+//   - Finding 2 — The Blast Radius Problem: a malicious tool
+//     description can expand its attack surface to include OTHER
+//     connected tools by referencing them in its description text.
+//     The MCP protocol provides no trust boundary between
+//     descriptions from different servers; once both are loaded
+//     into the shared LLM context window, cross-references
+//     become reasoning hooks the attacker can exploit.
+//
+// OWASP AGENTIC TOP 10
+//   ASI01 — Agent Goal Hijack
+//
+// MITRE ATLAS
+//   AML.T0053 — LLM Plugin Compromise
+//
+// DEFENSE-IN-DEPTH NARRATIVE — RULE 1 + RULE 2 COVERAGE
+//   Rule 1 (poisoned tool description ingested) uses keyword
+//   matching against a fixed list of instruction-like patterns.
+//   It catches dramatic Tool Shadowing payloads that contain
+//   explicit instruction markers (IMPORTANT, you must, etc.) but
+//   misses subtler payloads that achieve the same attack via
+//   semantic reframing without triggering the keyword list. This
+//   limitation is documented in Rule 1's header as a Finding 6
+//   (Obfuscation Gap) demonstration.
+//
+//   Rule 2 catches a different aspect of the same attack class:
+//   the structural fact that the attacker's description must
+//   REFERENCE the target tool by name to manipulate the LLM into
+//   redirecting calls to it. Cross-tool reference is harder to
+//   obfuscate than keyword patterns — an attacker can rephrase
+//   "IMPORTANT" as "essential" or "must be set to" as "should
+//   route to," but cannot easily rephrase "send_email" without
+//   breaking the attack mechanic.
+//
+//   Together, Rules 1 and 2 provide coverage across both
+//   detection signatures:
+//     - V1 calendar_sync (dramatic payload): caught by Rule 1
+//       AND Rule 2 (high-confidence Tool Shadowing)
+//     - V2 calendar_sync (subtle payload): missed by Rule 1
+//       (Finding 6) but caught by Rule 2 (recovers coverage)
+//
+//   This is defense-in-depth at the description-ingestion layer.
+//   Different attack signatures, complementary detection logic,
+//   no single point of failure.
+//
+// LAB DATA — KNOWN POSITIVE AND NEGATIVE CASES
+//   Verified against MCPProtocolLogs_CL as of 2026-05-27:
+//
+//   FIRES (positive):
+//     calendar_sync V1 (hash 44c65aee45b061d1..., 862 chars):
+//       description contains "send_email" — Rule 2 matches.
+//       Expected: 18 events fire.
+//     calendar_sync V2 (hash 730af110b70716da..., 606 chars):
+//       description contains "send_email" — Rule 2 matches.
+//       Expected: 6 events fire.
+//     Combined: 24 events fire across both V1 and V2 payloads.
+//
+//   DOES NOT FIRE (negative):
+//     send_email (hash cb006818569a05e3..., 216 chars):
+//       description does not contain "calendar_sync" — Rule 2
+//       correctly skips. Expected: 24 events correctly do not
+//       fire.
+//
+//   COVERAGE COMPARISON TO RULE 1:
+//     - Rule 1 precision: 100% (18 of 18 firings are V1 attacks).
+//     - Rule 1 recall against calendar_sync attacks: 75% (18 of
+//       24; V2 missed per Finding 6).
+//     - Rule 2 precision: 100% (24 of 24 firings are real
+//       cross-tool references).
+//     - Rule 2 recall against calendar_sync attacks: 100% (24 of
+//       24; both V1 and V2 caught).
+//
+//   Rule 2 closes the V2 gap that Rule 1 left open. This is the
+//   defense-in-depth claim made concrete with numbers.
+//
+// SCOPE FILTERS
+//   - EventType == "ToolDescriptionLoaded": only inspect
+//     description-load events.
+//   - isnotempty(ToolDescription): defensive guard against null
+//     or empty descriptions.
+//   - ServerName != ServerName1: exclude self-references — a
+//     description naturally references its own server's tools;
+//     only cross-server references are suspicious.
+//   - No HostApp filter. Rule 2 is host-agnostic per
+//     content/pattern classification.
+//   - No EventTime filter. Same reasoning as Rule 1 — the
+//     detection signature does not depend on event timing.
+//
+// CROSS-JOIN MECHANIC (`extend dummy = 1`)
+//   KQL does not have a dedicated CROSS JOIN operator. The
+//   standard idiom for "pair every left row with every right
+//   row" is to add a constant column (value 1) to both sides and
+//   join on that constant. The result is a Cartesian product:
+//   every event row is paired with every watchlist row. The
+//   subsequent `where ToolDescription contains ToolName1` filter
+//   keeps only pairings where the event's description contains
+//   the watchlist's tool name. The `where ServerName !=
+//   ServerName1` filter then removes self-pairings.
+//
+//   The column rename convention is critical: after the join,
+//   left-side columns retain their original names, right-side
+//   columns receive a `1` suffix. `ToolName` references the
+//   event's own tool name; `ToolName1` references the watchlist
+//   value. The diagnostic conducted on 2026-05-27 verified this
+//   convention before writing this rule.
+//
+// PROJECTION
+//   EventTime, SessionId, HostApp, ModelName for triage context.
+//   ServerName, ToolName identify the SOURCE event (the
+//   description doing the referencing).
+//   ReferencedTool, ReferencedServer identify the TARGET (the
+//   tool being referenced) — renamed from ToolName1, ServerName1
+//   for analyst readability.
+//   ToolDescription for analyst review of the full reference
+//   context.
+//   ToolDescriptionHash for cross-reference with Rule 3
+//   (watchlist hash drift detection).
+//   ToolDescriptionLength for anomaly signal.
+//   IngestionAgent for forensic provenance.
+//
+// KNOWN LIMITATIONS
+//
+//   Limitation 1 — Watchlist staleness.
+//     Rule 2's detection is bounded by the MCPToolNames watchlist
+//     contents. If new MCP servers are added to the environment
+//     but the watchlist is not updated, cross-references to those
+//     new tools will not be detected. Watchlist maintenance must
+//     be tied to MCP server provisioning workflows.
+//
+//   Limitation 2 — Substring matching imprecision.
+//     The `contains` operator performs case-sensitive substring
+//     match. A tool named "send_email" would substring-match
+//     against any description containing "send_email_v2" or
+//     "old_send_email". In this lab, no such overlapping tool
+//     names exist, but production deployments should consider
+//     using `has` or word-boundary regex if tool naming
+//     conventions allow prefix collisions.
+//
+//   Limitation 3 — Self-promoting descriptions not detected.
+//     A description that references its OWN tools (e.g., a tool
+//     suite where one tool legitimately documents the others) is
+//     excluded by the `ServerName != ServerName1` filter. If an
+//     attacker controls multiple tools under one ServerName,
+//     they could potentially evade Rule 2 by structuring the
+//     attack within their own server's namespace. Rule 4's
+//     parameter-divergence detection would still catch the
+//     attack at execution time.
+//
+// TRIAGE STEPS
+//   1. Review ToolDescription content — confirm the cross-tool
+//      reference is in instruction-like context (directing
+//      behavior toward another tool) rather than benign
+//      reference context (e.g., documentation listing related
+//      tools).
+//   2. Cross-check with Rule 1 — if the description also matches
+//      Rule 1's keyword regex, this is high-confidence Tool
+//      Shadowing (dramatic + cross-tool reference).
+//   3. Cross-check with Rule 3 — verify the
+//      ToolDescriptionHash against the MCPToolDescriptions
+//      watchlist of approved descriptions.
+//   4. Verify the ReferencedTool's actual call history during
+//      the SessionId timeframe — did the LLM actually invoke
+//      the referenced tool with manipulated parameters? Rule 4
+//      would detect this at execution time.
+//   5. If the description is confirmed malicious, disconnect the
+//      offending server and capture session evidence for
+//      incident response.
+//
+// =============================================================
+
+let KnownTools = _GetWatchlist("MCPToolNames");
+MCPProtocolLogs_CL
+| where EventType == "ToolDescriptionLoaded"
+| where isnotempty(ToolDescription)
+| extend dummy = 1
+| join kind=inner (KnownTools | extend dummy = 1) on dummy
+| where ToolDescription contains ToolName1
+| where ServerName != ServerName1
+| project
+    EventTime,
+    SessionId,
+    HostApp,
+    ModelName,
+    ServerName,
+    ToolName,
+    ReferencedTool = ToolName1,
+    ReferencedServer = ServerName1,
+    ToolDescription,
+    ToolDescriptionHash,
+    ToolDescriptionLength,
+    IngestionAgent
+| order by EventTime desc

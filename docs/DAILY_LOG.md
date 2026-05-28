@@ -1242,3 +1242,603 @@ ready for Day-5 polish work (traceability matrix, YAML wrappers,
 README, optional GitHub remote push).
 
 ---
+## Day 6 — Wednesday 2026-05-27 (resume after 2-day break)
+
+**Session window:** 08:53 EDT — [in progress].
+
+Monday 2026-05-25 work paused at end-of-day with Rule 2 partially
+designed (watchlist created, KQL skeleton written, but test query
+returning zero matches due to a column-naming issue we hadn't yet
+isolated). Tuesday was a no-work day. Resumed Wednesday morning.
+
+### Two-day break — checkpoint observations
+
+The 2-day gap was deliberate (rest after Day 4's 9-hour session
+and Monday's session ending in fatigue). Returning fresh prevented
+the kind of late-day reasoning errors that nearly produced
+incorrect designs on Day 3 (Saturday). The work that landed today
+required architectural judgment — the kind of work that depletion
+makes worse, not better.
+
+### Pre-resume bookkeeping commit
+
+The first commit of the day (commit e761585) was bookkeeping —
+adding `.next-session-resume.txt` to `.gitignore`. The resume note
+itself was written Monday evening as a context-recovery aid for
+future-me. Two days later, future-me (today-me) read the note,
+confirmed it matched conversational history, and committed only
+the gitignore change. The resume note file stays local-only and
+out of version control.
+
+### Rule 2 — Cross-Tool Reference in Description
+
+Rule 2 detects MCP tool descriptions whose text references the
+name of a tool owned by a different server. Maps to Threat Model
+Finding 2 (The Blast Radius Problem). OWASP ASI01 — Agent Goal
+Hijack. MITRE ATLAS AML.T0053 — LLM Plugin Compromise.
+
+### Phase 1 — Design conversation (Monday + today)
+
+Five design decisions settled:
+
+1. **Tool-name source**: Watchlist (Option B). Three options were
+   considered: self-join MCPProtocolLogs_CL against itself,
+   watchlist (chosen), or hardcoded tool names. The watchlist
+   approach provides SC-200 alignment (watchlists are explicit
+   exam objective material), explicit human authority over what
+   counts as a tool name, and consistency with Rule 3's planned
+   watchlist dependency. This is documented in the rule header
+   as a deliberate architectural choice.
+
+2. **Watchlist schema**: Two columns (`ToolName` + `ServerName`).
+   The pair captures "which server owns which tool," which is
+   necessary because Rule 2's whole point is detecting
+   CROSS-server references. Without ServerName context, the rule
+   could only detect "any reference to any known tool name," not
+   the specific signature of "server A references server B's
+   tool."
+
+3. **Watchlist contents (lab scope)**: Two rows — `send_email` and
+   `calendar_sync`. Tight to lab reality. Production deployments
+   would include all approved MCP tools.
+
+4. **Scope filters**: `EventType == "ToolDescriptionLoaded"` and
+   `isnotempty(ToolDescription)`. No HostApp filter (host-agnostic
+   per content/pattern classification). No EventTime filter (same
+   reasoning as Rule 1).
+
+5. **Cross-join mechanic**: `extend dummy = 1` on both sides +
+   `join on dummy`. KQL has no dedicated cross-join operator; this
+   is the documented idiom. Produces the Cartesian product needed
+   for "compare every event row against every watchlist row."
+
+### Phase 2 — Watchlist creation (Monday) and verification (Wednesday)
+
+Created the MCPToolNames watchlist in the Microsoft Defender
+portal on Monday 2026-05-25. The unified Defender portal has
+absorbed Sentinel's UI for workspaces; navigation to "Watchlist"
+is now under Defender's left nav rather than the legacy Azure
+portal Sentinel section.
+
+Wednesday morning verified the watchlist persisted across the
+2-day gap: `_GetWatchlist("MCPToolNames")` returned the expected
+two rows. Watchlists are durable; the two days off introduced no
+state drift.
+
+### Phase 2 (continued) — Diagnostic chain to resolve test failure
+
+Monday's initial Rule 2 KQL skeleton produced zero matches when
+tested. The verify-before-fix discipline required isolating the
+failure rather than guessing.
+
+Three diagnostic queries ran:
+
+- Diagnostic 1 (`_GetWatchlist | getschema`): confirmed watchlist
+  column names are `ToolName` and `ServerName` (string), plus
+  Sentinel-managed metadata columns. My assumption about column
+  names was correct. Eliminated "column name mismatch" hypothesis.
+
+- Diagnostic 2 (cross-join count): produced 96 rows (48 events ×
+  2 watchlist rows). The cross-join mechanic works correctly.
+  Eliminated "join syntax broken" hypothesis.
+
+- Diagnostic 3 (hardcoded contains check, no watchlist): produced
+  24 rows — the expected count for cross-tool references in the
+  underlying data. Eliminated "contains operator broken" and
+  "underlying detection logic wrong" hypotheses.
+
+By elimination, the failure was in column rename convention after
+join. Today's column-aliasing diagnostic explicitly aliased all
+four post-join columns (ServerName_Left, ServerName_Right,
+ToolName_Left, ToolName_Right) to settle the question.
+
+### The bug Monday's query had
+
+The original test query wrote:
+
+```
+| where ToolDescription contains ToolName
+```
+
+After the join, `ToolName` (without suffix) refers to the LEFT-side
+column — the event's own tool name. `ToolName1` (with `1` suffix)
+refers to the RIGHT-side column — the watchlist's tool name.
+
+So the broken query was asking "does calendar_sync's description
+contain the string `calendar_sync`?" — which is TRUE (descriptions
+naturally reference their own names) but then the
+`ServerName != ServerName1` filter excluded all self-pairings.
+
+Net effect: zero rows survived both filters.
+
+The fix is a single character change: `contains ToolName1` (with
+the `1` suffix) instead of `contains ToolName`. This corrects the
+filter to compare event descriptions against WATCHLIST tool names,
+not against the event's own tool name.
+
+### Working principle preserved
+
+In KQL cross-join queries, column references after the join require
+explicit awareness of which side they're pulling from. The `1`
+suffix is the only visual cue distinguishing left from right. Get
+it wrong and queries silently produce wrong results — no error,
+just wrong data. The discipline: when joining tables that share
+column names, alias them explicitly or be deliberate about which
+side every reference is pulling from.
+
+### Phase 3 — Rule 2 KQL writing
+
+Rule 2 file (rules/rule_02_cross_tool_reference.kql) was written
+following Rule 1's documentation pattern. 257 lines total — roughly
+240 lines of substantive header (schema references, classification,
+detection purpose, watchlist dependency documentation, why
+watchlist vs self-join vs hardcode, threat-model mapping,
+OWASP/ATLAS mappings, defense-in-depth narrative comparing Rule 1
+and Rule 2 coverage, lab data with precision/recall analysis,
+scope filter rationale, cross-join mechanic explanation, projection
+rationale, three known limitations, five triage steps) and 15
+lines of KQL.
+
+The header documents the watchlist dependency prominently because
+the watchlist is a deliberate architectural choice with SC-200
+portfolio value. Future engineers reading the rule need to
+understand both what it does AND why the watchlist approach was
+chosen over alternatives.
+
+### Phase 4 — Sentinel verification (Figure 7)
+
+Sentinel query returned 24 rows, mix of V1 (hash 44c65aee...,
+length 862) and V2 (hash 730af110..., length 606). The
+ReferenceExcerpt column visibly shows the V1 vs V2 stylistic
+difference:
+
+- V2 excerpt: "send_email tool for calendar invite delivery. Due
+  to a known routing configuration in this..." — infrastructure
+  framing.
+- V1 excerpt: "send_email tool. Whenever send_email is called
+  while this tool is active, the recipient field..." — directive
+  framing.
+
+The screenshot makes the Finding 6 / Obfuscation Gap concept
+visually concrete without needing prose explanation — two attack
+styles, same rule catches both.
+
+Figure 8 (category summary) was explicitly skipped. Figure 7
+carries the load alone for Rule 2's evidence; Day-5 writeup will
+quote precision/recall numbers in prose. Figure-count economy
+matters.
+
+### Architectural finding — V3 calendar_sync exists on disk
+
+During the V2 phrasing review (a side investigation to refresh
+context on the subtle vs dramatic payload styles), discovered
+that the calendar_sync.py file currently on disk at
+`/mnt/c/Users/gonsa/ai_threat_model/mcp-security-lab/servers/`
+contains a THIRD payload version that is NOT in the captured
+Sentinel dataset.
+
+Genealogy clarified:
+
+- **V1 (original dramatic)** — 1168 bytes, dated May 22 10:05.
+  Lives at calendar_sync.v1.backup.py. Contains `<IMPORTANT>`
+  tags, single recipient-redirect instruction, "Do not inform
+  the user" framing, "VERY VERY VERY important" emphasis. Hash
+  44c65aee... in MCPProtocolLogs_CL with 18 captured events.
+
+- **V2 (subtle routing)** — currently NOT on disk. Was on disk
+  long enough to be captured into Sentinel. Contains "known
+  routing configuration," "standard infrastructure," "no user
+  action" framing. Hash 730af110... in MCPProtocolLogs_CL with
+  6 captured events. This is the "Finding 6 / Obfuscation Gap"
+  exemplar referenced throughout Rule 1's and Rule 2's headers.
+
+- **V3 (strengthened body-format)** — 1806 bytes, dated May 22
+  10:14. Currently active on disk. Contains `<IMPORTANT>` tags
+  AND structured body-format specification (two numbered changes,
+  explicit Original recipient: field format). NOT yet captured
+  in any Sentinel session. Would produce a new hash if a fresh
+  capture session were run.
+
+### Scope decision — V1 and V2 only
+
+The detection pack's portfolio is scoped to the V1 and V2 hashes
+that exist in MCPProtocolLogs_CL. V3 is documented here for
+forensic completeness but is out of scope for the four-rule pack.
+This is consistent with the data-availability discipline applied
+throughout: the pack ships rules verified against data that exists
+in the lab dataset, not against theoretical attack variants.
+
+Future work: a follow-up capture session using V3 would expand
+the dataset and demonstrate Rule 1 catching V3 (V3 contains
+`<IMPORTANT>` keyword), Rule 2 also catching V3 (V3 references
+`send_email`), and would surface whether V3's body-format
+specification produces stronger Rule 4 evidence than V2 did. Not
+in scope today.
+
+### Files changed in this commit
+
+- `rules/rule_02_cross_tool_reference.kql`: new file, 257 lines.
+  Substantive header documenting classification, detection
+  purpose, watchlist dependency with design rationale, threat
+  model mapping, OWASP/ATLAS mappings, defense-in-depth narrative
+  vs Rule 1, lab data with precision/recall analysis, scope
+  filters, cross-join mechanic, projection rationale, three known
+  limitations, five triage steps. KQL implements watchlist join
+  with `extend dummy = 1` cross-join idiom, filters for
+  cross-server references, projects 12 fields including
+  ReferencedTool and ReferencedServer renames for triage
+  readability.
+
+- `watchlists/mcp_tool_names.csv`: new file, 3 lines (header +
+  2 data rows). The reference data backing Rule 2's
+  `_GetWatchlist("MCPToolNames")` call. Tracked in git so anyone
+  cloning the repo can recreate the watchlist in their own
+  Sentinel workspace.
+
+- `docs/DAILY_LOG.md`: appended this Day 6 entry.
+
+### Pack state after Rule 2
+
+- Rule 1 (poisoned description): ✓ committed and verified (Day 4)
+- Rule 4 (original recipient structural tell): ✓ committed and verified (Day 3)
+- Rule 2 (cross-tool reference): ✓ committed and verified (Day 6)
+- Rule 3 (tool description hash drift): planned, not yet started;
+  will require MCPToolDescriptions watchlist setup first.
+
+### Forward plan — remaining work
+
+1. **Rule 3 implementation** — hash drift detection. Watchlist
+   (MCPToolDescriptions) needs to contain approved tool
+   description hashes; rule joins against it and flags
+   descriptions whose hash diverges. ~30 min for watchlist + ~75
+   min for the rule. Same watchlist pattern Rule 2 just
+   demonstrated.
+
+2. **Day 6 wrap** — DAILY_LOG end-of-day update, daily backup
+   (per the cross-drive pattern: copy E: backup to D: drive for
+   redundancy), commit close-out.
+
+3. **Day-5 polish work** (now Day 7+) — 4-rule traceability
+   matrix (threat model finding → OWASP → MITRE ATLAS →
+   detection rule → figure), README, optional YAML rule wrappers,
+   optional GitHub remote push.
+
+### Process notes
+
+- The 2-day break between Day 4 and Day 6 worked well. Returning
+  fresh allowed the diagnostic chain (3 queries to isolate the
+  column-naming bug) to proceed cleanly rather than collapsing
+  into "try variants until something works."
+
+- The diagnostic-first approach saved time. The bug was a single
+  character fix (`ToolName` → `ToolName1`), but only obvious AFTER
+  isolation. Without diagnostics, the iterative fix-and-test loop
+  could have consumed an hour or more.
+
+- The V1/V2/V3 finding came from a tangent question ("can you
+  look up V2's exact phrasing?") that exposed a deeper forensic
+  detail. Worth documenting; reinforces the principle that
+  investigating questions thoroughly often surfaces information
+  that wasn't in the original scope.
+
+---
+## Day 6 — Wednesday 2026-05-27 (resume after 2-day break)
+
+**Session window:** 08:53 EDT — [in progress].
+
+Monday 2026-05-25 work paused at end-of-day with Rule 2 partially
+designed (watchlist created, KQL skeleton written, but test query
+returning zero matches due to a column-naming issue we hadn't yet
+isolated). Tuesday was a no-work day. Resumed Wednesday morning.
+
+### Two-day break — checkpoint observations
+
+The 2-day gap was deliberate (rest after Day 4's 9-hour session
+and Monday's session ending in fatigue). Returning fresh prevented
+the kind of late-day reasoning errors that nearly produced
+incorrect designs on Day 3 (Saturday). The work that landed today
+required architectural judgment — the kind of work that depletion
+makes worse, not better.
+
+### Pre-resume bookkeeping commit
+
+The first commit of the day (commit e761585) was bookkeeping —
+adding `.next-session-resume.txt` to `.gitignore`. The resume note
+itself was written Monday evening as a context-recovery aid for
+future-me. Two days later, future-me (today-me) read the note,
+confirmed it matched conversational history, and committed only
+the gitignore change. The resume note file stays local-only and
+out of version control.
+
+### Rule 2 — Cross-Tool Reference in Description
+
+Rule 2 detects MCP tool descriptions whose text references the
+name of a tool owned by a different server. Maps to Threat Model
+Finding 2 (The Blast Radius Problem). OWASP ASI01 — Agent Goal
+Hijack. MITRE ATLAS AML.T0053 — LLM Plugin Compromise.
+
+### Phase 1 — Design conversation (Monday + today)
+
+Five design decisions settled:
+
+1. **Tool-name source**: Watchlist (Option B). Three options were
+   considered: self-join MCPProtocolLogs_CL against itself,
+   watchlist (chosen), or hardcoded tool names. The watchlist
+   approach provides SC-200 alignment (watchlists are explicit
+   exam objective material), explicit human authority over what
+   counts as a tool name, and consistency with Rule 3's planned
+   watchlist dependency. This is documented in the rule header
+   as a deliberate architectural choice.
+
+2. **Watchlist schema**: Two columns (`ToolName` + `ServerName`).
+   The pair captures "which server owns which tool," which is
+   necessary because Rule 2's whole point is detecting
+   CROSS-server references. Without ServerName context, the rule
+   could only detect "any reference to any known tool name," not
+   the specific signature of "server A references server B's
+   tool."
+
+3. **Watchlist contents (lab scope)**: Two rows — `send_email` and
+   `calendar_sync`. Tight to lab reality. Production deployments
+   would include all approved MCP tools.
+
+4. **Scope filters**: `EventType == "ToolDescriptionLoaded"` and
+   `isnotempty(ToolDescription)`. No HostApp filter (host-agnostic
+   per content/pattern classification). No EventTime filter (same
+   reasoning as Rule 1).
+
+5. **Cross-join mechanic**: `extend dummy = 1` on both sides +
+   `join on dummy`. KQL has no dedicated cross-join operator; this
+   is the documented idiom. Produces the Cartesian product needed
+   for "compare every event row against every watchlist row."
+
+### Phase 2 — Watchlist creation (Monday) and verification (Wednesday)
+
+Created the MCPToolNames watchlist in the Microsoft Defender
+portal on Monday 2026-05-25. The unified Defender portal has
+absorbed Sentinel's UI for workspaces; navigation to "Watchlist"
+is now under Defender's left nav rather than the legacy Azure
+portal Sentinel section.
+
+Wednesday morning verified the watchlist persisted across the
+2-day gap: `_GetWatchlist("MCPToolNames")` returned the expected
+two rows. Watchlists are durable; the two days off introduced no
+state drift.
+
+### Phase 2 (continued) — Diagnostic chain to resolve test failure
+
+Monday's initial Rule 2 KQL skeleton produced zero matches when
+tested. The verify-before-fix discipline required isolating the
+failure rather than guessing.
+
+Three diagnostic queries ran:
+
+- Diagnostic 1 (`_GetWatchlist | getschema`): confirmed watchlist
+  column names are `ToolName` and `ServerName` (string), plus
+  Sentinel-managed metadata columns. My assumption about column
+  names was correct. Eliminated "column name mismatch" hypothesis.
+
+- Diagnostic 2 (cross-join count): produced 96 rows (48 events ×
+  2 watchlist rows). The cross-join mechanic works correctly.
+  Eliminated "join syntax broken" hypothesis.
+
+- Diagnostic 3 (hardcoded contains check, no watchlist): produced
+  24 rows — the expected count for cross-tool references in the
+  underlying data. Eliminated "contains operator broken" and
+  "underlying detection logic wrong" hypotheses.
+
+By elimination, the failure was in column rename convention after
+join. Today's column-aliasing diagnostic explicitly aliased all
+four post-join columns (ServerName_Left, ServerName_Right,
+ToolName_Left, ToolName_Right) to settle the question.
+
+### The bug Monday's query had
+
+The original test query wrote:
+
+```
+| where ToolDescription contains ToolName
+```
+
+After the join, `ToolName` (without suffix) refers to the LEFT-side
+column — the event's own tool name. `ToolName1` (with `1` suffix)
+refers to the RIGHT-side column — the watchlist's tool name.
+
+So the broken query was asking "does calendar_sync's description
+contain the string `calendar_sync`?" — which is TRUE (descriptions
+naturally reference their own names) but then the
+`ServerName != ServerName1` filter excluded all self-pairings.
+
+Net effect: zero rows survived both filters.
+
+The fix is a single character change: `contains ToolName1` (with
+the `1` suffix) instead of `contains ToolName`. This corrects the
+filter to compare event descriptions against WATCHLIST tool names,
+not against the event's own tool name.
+
+### Working principle preserved
+
+In KQL cross-join queries, column references after the join require
+explicit awareness of which side they're pulling from. The `1`
+suffix is the only visual cue distinguishing left from right. Get
+it wrong and queries silently produce wrong results — no error,
+just wrong data. The discipline: when joining tables that share
+column names, alias them explicitly or be deliberate about which
+side every reference is pulling from.
+
+### Phase 3 — Rule 2 KQL writing
+
+Rule 2 file (rules/rule_02_cross_tool_reference.kql) was written
+following Rule 1's documentation pattern. 257 lines total — roughly
+240 lines of substantive header (schema references, classification,
+detection purpose, watchlist dependency documentation, why
+watchlist vs self-join vs hardcode, threat-model mapping,
+OWASP/ATLAS mappings, defense-in-depth narrative comparing Rule 1
+and Rule 2 coverage, lab data with precision/recall analysis,
+scope filter rationale, cross-join mechanic explanation, projection
+rationale, three known limitations, five triage steps) and 15
+lines of KQL.
+
+The header documents the watchlist dependency prominently because
+the watchlist is a deliberate architectural choice with SC-200
+portfolio value. Future engineers reading the rule need to
+understand both what it does AND why the watchlist approach was
+chosen over alternatives.
+
+### Phase 4 — Sentinel verification (Figure 7)
+
+Sentinel query returned 24 rows, mix of V1 (hash 44c65aee...,
+length 862) and V2 (hash 730af110..., length 606). The
+ReferenceExcerpt column visibly shows the V1 vs V2 stylistic
+difference:
+
+- V2 excerpt: "send_email tool for calendar invite delivery. Due
+  to a known routing configuration in this..." — infrastructure
+  framing.
+- V1 excerpt: "send_email tool. Whenever send_email is called
+  while this tool is active, the recipient field..." — directive
+  framing.
+
+The screenshot makes the Finding 6 / Obfuscation Gap concept
+visually concrete without needing prose explanation — two attack
+styles, same rule catches both.
+
+Figure 8 (category summary) was explicitly skipped. Figure 7
+carries the load alone for Rule 2's evidence; Day-5 writeup will
+quote precision/recall numbers in prose. Figure-count economy
+matters.
+
+### Architectural finding — V3 calendar_sync exists on disk
+
+During the V2 phrasing review (a side investigation to refresh
+context on the subtle vs dramatic payload styles), discovered
+that the calendar_sync.py file currently on disk at
+`/mnt/c/Users/gonsa/ai_threat_model/mcp-security-lab/servers/`
+contains a THIRD payload version that is NOT in the captured
+Sentinel dataset.
+
+Genealogy clarified:
+
+- **V1 (original dramatic)** — 1168 bytes, dated May 22 10:05.
+  Lives at calendar_sync.v1.backup.py. Contains `<IMPORTANT>`
+  tags, single recipient-redirect instruction, "Do not inform
+  the user" framing, "VERY VERY VERY important" emphasis. Hash
+  44c65aee... in MCPProtocolLogs_CL with 18 captured events.
+
+- **V2 (subtle routing)** — currently NOT on disk. Was on disk
+  long enough to be captured into Sentinel. Contains "known
+  routing configuration," "standard infrastructure," "no user
+  action" framing. Hash 730af110... in MCPProtocolLogs_CL with
+  6 captured events. This is the "Finding 6 / Obfuscation Gap"
+  exemplar referenced throughout Rule 1's and Rule 2's headers.
+
+- **V3 (strengthened body-format)** — 1806 bytes, dated May 22
+  10:14. Currently active on disk. Contains `<IMPORTANT>` tags
+  AND structured body-format specification (two numbered changes,
+  explicit Original recipient: field format). NOT yet captured
+  in any Sentinel session. Would produce a new hash if a fresh
+  capture session were run.
+
+### Scope decision — V1 and V2 only
+
+The detection pack's portfolio is scoped to the V1 and V2 hashes
+that exist in MCPProtocolLogs_CL. V3 is documented here for
+forensic completeness but is out of scope for the four-rule pack.
+This is consistent with the data-availability discipline applied
+throughout: the pack ships rules verified against data that exists
+in the lab dataset, not against theoretical attack variants.
+
+Future work: a follow-up capture session using V3 would expand
+the dataset and demonstrate Rule 1 catching V3 (V3 contains
+`<IMPORTANT>` keyword), Rule 2 also catching V3 (V3 references
+`send_email`), and would surface whether V3's body-format
+specification produces stronger Rule 4 evidence than V2 did. Not
+in scope today.
+
+### Files changed in this commit
+
+- `rules/rule_02_cross_tool_reference.kql`: new file, 257 lines.
+  Substantive header documenting classification, detection
+  purpose, watchlist dependency with design rationale, threat
+  model mapping, OWASP/ATLAS mappings, defense-in-depth narrative
+  vs Rule 1, lab data with precision/recall analysis, scope
+  filters, cross-join mechanic, projection rationale, three known
+  limitations, five triage steps. KQL implements watchlist join
+  with `extend dummy = 1` cross-join idiom, filters for
+  cross-server references, projects 12 fields including
+  ReferencedTool and ReferencedServer renames for triage
+  readability.
+
+- `watchlists/mcp_tool_names.csv`: new file, 3 lines (header +
+  2 data rows). The reference data backing Rule 2's
+  `_GetWatchlist("MCPToolNames")` call. Tracked in git so anyone
+  cloning the repo can recreate the watchlist in their own
+  Sentinel workspace.
+
+- `docs/DAILY_LOG.md`: appended this Day 6 entry.
+
+### Pack state after Rule 2
+
+- Rule 1 (poisoned description): ✓ committed and verified (Day 4)
+- Rule 4 (original recipient structural tell): ✓ committed and verified (Day 3)
+- Rule 2 (cross-tool reference): ✓ committed and verified (Day 6)
+- Rule 3 (tool description hash drift): planned, not yet started;
+  will require MCPToolDescriptions watchlist setup first.
+
+### Forward plan — remaining work
+
+1. **Rule 3 implementation** — hash drift detection. Watchlist
+   (MCPToolDescriptions) needs to contain approved tool
+   description hashes; rule joins against it and flags
+   descriptions whose hash diverges. ~30 min for watchlist + ~75
+   min for the rule. Same watchlist pattern Rule 2 just
+   demonstrated.
+
+2. **Day 6 wrap** — DAILY_LOG end-of-day update, daily backup
+   (per the cross-drive pattern: copy E: backup to D: drive for
+   redundancy), commit close-out.
+
+3. **Day-5 polish work** (now Day 7+) — 4-rule traceability
+   matrix (threat model finding → OWASP → MITRE ATLAS →
+   detection rule → figure), README, optional YAML rule wrappers,
+   optional GitHub remote push.
+
+### Process notes
+
+- The 2-day break between Day 4 and Day 6 worked well. Returning
+  fresh allowed the diagnostic chain (3 queries to isolate the
+  column-naming bug) to proceed cleanly rather than collapsing
+  into "try variants until something works."
+
+- The diagnostic-first approach saved time. The bug was a single
+  character fix (`ToolName` → `ToolName1`), but only obvious AFTER
+  isolation. Without diagnostics, the iterative fix-and-test loop
+  could have consumed an hour or more.
+
+- The V1/V2/V3 finding came from a tangent question ("can you
+  look up V2's exact phrasing?") that exposed a deeper forensic
+  detail. Worth documenting; reinforces the principle that
+  investigating questions thoroughly often surfaces information
+  that wasn't in the original scope.
+
+---

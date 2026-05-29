@@ -2112,3 +2112,154 @@ documentation and packaging:
   for reproducibility.
 
 ---
+## Day 7 — Closure (written 2026-05-29 morning)
+
+Day 7 closed at the Rule 3 commit (a5910ba) on 2026-05-28
+afternoon. This wrap entry is written the morning after, to
+mark Day 7 as complete and document the polish-phase framing
+decisions made in the closing hours.
+
+### Milestone — the four-rule pack is complete
+
+What was delivered across the project arc to date:
+
+- Four detection rules committed and verified against real
+  captured lab data (Rules 1, 2, 3, 4).
+- Two watchlists tracked in the repo as CSVs (MCPToolNames for
+  Rule 2; MCPToolDescriptions for Rule 3) — both produced by
+  the Defender portal wizard, verified content, committed for
+  reproducibility.
+- Nine figures captured across the four rules in the external
+  archive (Figures 2/3 for Rule 4, 4/5a/5b for Rule 1, 7 for
+  Rule 2, 9 for Rule 3).
+- Seven git commits with substantive messages documenting the
+  design conversation and verification at each step.
+- DAILY_LOG at ~2100 lines documenting the full project arc
+  from forwarder design through pack completion.
+- Defense-in-depth narrative made concrete with V1/V2 coverage
+  matrix — no single point of failure for the documented Tool
+  Shadowing attack.
+
+The detection-building phase is closed. What remains is
+documentation and packaging (the polish phase), framed in the
+section below.
+
+### Polish-phase framing decisions (locked 2026-05-28 afternoon)
+
+After the Rule 3 commit landed, the closing hours of Day 7 were
+spent scoping the polish phase by analyzing the existing
+Defending_Agentic_AI portfolio convention and deciding how the
+MCP Detection Pack documentation should align. These decisions
+are encoded in memory and are summarized here so the polish-
+phase sessions have them in DAILY_LOG context as well.
+
+Portfolio arc — the project sits in a four-project arc on
+agentic AI security:
+
+  Mastering SOC Agentic AI    (video — use)
+  Defending Agentic AI        (video — defend)
+  MCP Tool Shadowing Threat Model  (written report — analyze)
+  MCP Detection Pack          (code + video — detect)  <- this project
+
+The arc logic is use -> defend -> analyze -> detect. Threat
+Model + Detection Pack form a tightly-coupled MCP sub-arc within
+the broader arc.
+
+Format-content match — each phase uses the artifact format
+appropriate to its work: video for hands-on use and defense
+(demonstrations), written report for threat modeling (industry
+convention for analytical security work), code plus video for
+detection engineering. The format change at the Threat Model is
+deliberate form-content matching, not flow inconsistency. The
+README and recruiter_brief should surface this principle
+explicitly to preempt the "why is one a report" question that a
+quick-scanning reviewer might land on.
+
+Two-tier documentation pattern — matches the existing
+Defending_Agentic_AI portfolio convention:
+
+  README.md (~250-350 lines) - sized for SOC L2 reviewer / 
+    technical hiring manager. Follows the Defending_Agentic_AI
+    README structure adapted to detection-engineering specifics.
+    Includes sections unique to MCP project: Scope Decisions 
+    (Rules 5/6 dropped, V1/V2/V3 calendar_sync genealogy), 
+    Defense-in-Depth Coverage Matrix (4 rules x V1/V2 coverage
+    table).
+  
+  recruiter_brief.md (~30-50 lines) - sized for non-technical
+    recruiter / first-pass screener. Deliberately LESS technical
+    than README: drops technique IDs, schema specifics, 
+    sophisticated nuances. Principle: recruiter_brief states 
+    WHAT the detections do; README explains HOW. Keeps SOC L2 
+    framing, plain-language value, the "3-minute reading map" 
+    pattern.
+
+MCP plain-language framing for recruiter audience (exact phrasing
+to preserve in the recruiter_brief): "Model Context Protocol is
+the framework that allows AI Agents talk to external tools using
+standard set of rules."
+
+Threat Model Report linkage — Threat Model Report lives on the
+Notion portfolio hub; README links to it from there.
+
+SC-200 framing — stays IMPLICIT in README and recruiter_brief.
+Direct SC-200 references would make the project read as academic
+study material rather than production-shaped work output. SC-200
+alignment is an interview talking point, not a project tag. This
+overrides the earlier per-session SC-200-objective tracking
+discipline FOR REVIEWER-FACING DOCS — DAILY_LOG-internal SC-200
+tracking continues but does not surface in the README,
+recruiter_brief, or any reviewer-facing documentation.
+
+Video walkthrough — REQUIRED, not optional. Maintains portfolio
+symmetry: three of the four projects in the arc carry videos
+(Mastering, Defending, Detection Pack); the Threat Model is the
+only written-report artifact and is framed by the format-content
+match principle.
+
+### Polish-phase work remaining (post-Day-7)
+
+In rough priority order:
+
+1. Traceability matrix (4 rules x Finding/OWASP/MITRE/Figure/
+   Coverage) - the senior-engineer artifact tying everything
+   together. ~60-90 min focused.
+2. README.md - currently empty (0 bytes). The face of the
+   project. ~2-3 hours focused.
+3. recruiter_brief.md - tight, less-technical second tier.
+   ~30-45 min focused.
+4. YAML/ARM rule wrappers (detection-as-code per Project Plan).
+   ~30-45 min for all four rules.
+5. GitHub remote push (after README is ready). ~15 min.
+6. Video walkthrough. 2-4 hours including script, recording,
+   editing.
+
+Total polish-phase effort estimate: ~6-9 hours across 2-3 fresh
+sessions plus the video session.
+
+### Process notes — closing Day 7
+
+- The 9-hour Day 7 session was at the upper end of sustainable
+  focus, but the work was front-loaded (Rule 3 design, 
+  debugging, verification) with the closing hours spent on
+  lower-cognitive-load framing analysis. The structure held.
+- The decision to defer all polish work to fresh sessions
+  (rather than starting the traceability matrix or README at
+  hour 9) is the same discipline that protected previous days.
+  Today's wrap entry is the explicit closure mark.
+- The framing decisions captured above are the substantive
+  output of Day 7's closing hours - not "we just talked about
+  the README." Locking the portfolio arc, the two-tier 
+  documentation pattern, the format-content match principle, 
+  the SC-200 implicit framing, and the exact MCP plain-language
+  sentence means the next polish session executes from a 
+  consistent baseline rather than re-litigating positioning 
+  decisions.
+
+### Next session
+
+Polish phase begins with the traceability matrix (highest
+leverage senior-engineer artifact, smallest scope). The README
+then builds on the traceability matrix's structure.
+
+---

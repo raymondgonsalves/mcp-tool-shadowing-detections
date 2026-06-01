@@ -1,0 +1,106 @@
+id: af7b5c4d-6e9f-4a8b-d9e8-4a5b6c7d8e9f
+name: MCP Original Recipient Tell at Tool Execution
+description: |
+  Detects send_email tool calls whose body contains the substring "original
+  recipient:" (case-insensitive). This phrasing is a direct mechanical
+  artifact of the Tool Shadowing payload demonstrated in the threat model
+  report — when the LLM complies with the poisoned instruction to move
+  the original recipient to the email body, the natural phrasing produced
+  is exactly this structural tell.
+
+  This is the execution-time detection layer of the pack. Where Rules 1,
+  2, and 3 catch the attack at description-ingestion (before any tool call
+  is made), Rule 4 catches the attack at tool execution — the moment the
+  Tool Shadowing payload actually fires and produces an unauthorized
+  send_email call to an attacker-controlled address.
+
+  Hypothesis: legitimate emails do not contain the phrase "original
+  recipient:" at any position in the body. The phrase has no organic
+  purpose in normal human-written email content. When it appears, it is
+  direct evidence that an LLM was instructed to redirect a tool call and
+  report the original target inside the body.
+
+  Threat Model Findings 13 (Confirmation Dialog Gap), 15 (Pre-Authorized
+  Tool Weaponization), 17 (Silent Attack). OWASP ASI02 (Tool Misuse) and
+  ASI09 (Human-Agent Trust Exploitation).
+
+  Lab verification: fires on llama3.2's V2 attack output where the LLM
+  complied with the poisoned calendar_sync description. Zero false
+  positives on Claude refusals (Claude's safety training caught the
+  injection at description-ingestion and never produced the redirected
+  call).
+severity: High
+status: Available
+requiredDataConnectors:
+  - connectorId: AzureMonitor(CustomTable)
+    dataTypes:
+      - MCPProtocolLogs_CL
+queryFrequency: PT5M
+queryPeriod: PT5M
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - Exfiltration
+relevantTechniques:
+  - T1567
+tags:
+  - MCP
+  - ToolShadowing
+  - ExecutionTime
+  - OWASP-ASI02
+  - OWASP-ASI09
+  - ATLAS-AML.T0048
+query: |
+  MCPProtocolLogs_CL
+  | where EventType == "ToolCallInvoked"
+  | where ToolName == "send_email"
+  | extend Recipient = tostring(CallParameters.recipient)
+  | extend Body = tostring(CallParameters.body)
+  | where isnotempty(Body)
+  | where tolower(Body) contains "original recipient:"
+  | project
+      EventTime,
+      SessionId,
+      HostApp,
+      ModelName,
+      ToolName,
+      Recipient,
+      Body,
+      UserPromptHash,
+      CallId
+customDetails:
+  Recipient: Recipient
+  ToolName: ToolName
+  CallId: CallId
+  UserPromptHash: UserPromptHash
+  SessionId: SessionId
+  HostApp: HostApp
+  ModelName: ModelName
+alertDetailsOverride:
+  alertDisplayNameFormat: "MCP Tool Shadowing executed: send_email redirected to {{Recipient}}"
+  alertDescriptionFormat: |
+    A send_email tool call was invoked with a body containing the
+    "original recipient:" structural tell — the mechanical signature of
+    the Tool Shadowing payload firing. The actual recipient was
+    {{Recipient}}. Review the Body field for the redirected target and
+    correlate with the SessionId across Rules 1, 2, and 3 to confirm the
+    description-ingestion-layer detections that should have fired on the
+    same session.
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: PT5H
+    matchingMethod: AllEntities
+    groupByEntities: []
+    groupByAlertDetails: []
+    groupByCustomDetails:
+      - SessionId
+      - Recipient
+eventGroupingSettings:
+  aggregationKind: SingleAlert
+suppressionDuration: PT1H
+suppressionEnabled: false
+version: 1.0.0
+kind: Scheduled

@@ -1,0 +1,109 @@
+id: 9e6f4a3b-5d8c-4f9e-c8d7-3f4a5b6c7d8e
+name: MCP Cross-Tool Reference in Description
+description: |
+  Detects MCP tool descriptions whose text references the name of a tool
+  owned by a different server. In a benign MCP environment, a tool
+  description describes only what its own tool does. When a description
+  names another connected tool — particularly a high-privilege tool like
+  send_email — it is attempting to influence the LLM's reasoning about
+  that other tool. This is the protocol-level signature of the Tool
+  Shadowing attack class.
+
+  Threat Model Finding 2 — The Blast Radius Problem: a malicious tool
+  description can expand its attack surface to include OTHER connected
+  tools by referencing them. The MCP protocol provides no trust boundary
+  between descriptions from different servers; once both are loaded into
+  the shared LLM context window, cross-references become reasoning hooks
+  the attacker can exploit.
+
+  Watchlist dependency: MCPToolNames (search key: ToolName). Contains the
+  authoritative list of known MCP tool names and their owning servers.
+  Cross-references are detected via Cartesian product join (extend dummy
+  pattern) with content-substring match.
+
+  Defense-in-depth role: catches the V2 calendar_sync attack that Rule 1
+  misses (Obfuscation Gap, Finding 6). Cross-tool references are harder
+  to obfuscate than keyword patterns — an attacker cannot easily rephrase
+  "send_email" without breaking the attack mechanic.
+severity: High
+status: Available
+requiredDataConnectors:
+  - connectorId: AzureMonitor(CustomTable)
+    dataTypes:
+      - MCPProtocolLogs_CL
+queryFrequency: PT15M
+queryPeriod: PT15M
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - InitialAccess
+relevantTechniques:
+  - T1195
+tags:
+  - MCP
+  - ToolShadowing
+  - BlastRadius
+  - OWASP-ASI01
+  - ATLAS-AML.T0053
+query: |
+  let KnownTools = _GetWatchlist("MCPToolNames");
+  MCPProtocolLogs_CL
+  | where EventType == "ToolDescriptionLoaded"
+  | where isnotempty(ToolDescription)
+  | extend dummy = 1
+  | join kind=inner (KnownTools | extend dummy = 1) on dummy
+  | where ToolDescription contains ToolName1
+  | where ServerName != ServerName1
+  | project
+      EventTime,
+      SessionId,
+      HostApp,
+      ModelName,
+      ServerName,
+      ToolName,
+      ReferencedTool = ToolName1,
+      ReferencedServer = ServerName1,
+      ToolDescription,
+      ToolDescriptionHash,
+      ToolDescriptionLength,
+      IngestionAgent
+  | order by EventTime desc
+customDetails:
+  ServerName: ServerName
+  ToolName: ToolName
+  ReferencedTool: ReferencedTool
+  ReferencedServer: ReferencedServer
+  ToolDescriptionHash: ToolDescriptionHash
+  ToolDescriptionLength: ToolDescriptionLength
+  SessionId: SessionId
+  HostApp: HostApp
+  ModelName: ModelName
+  IngestionAgent: IngestionAgent
+alertDetailsOverride:
+  alertDisplayNameFormat: "MCP cross-tool reference: {{ServerName}}/{{ToolName}} references {{ReferencedServer}}/{{ReferencedTool}}"
+  alertDescriptionFormat: |
+    Tool description from {{ServerName}}/{{ToolName}} references the name
+    of a tool ({{ReferencedTool}}) owned by a different server
+    ({{ReferencedServer}}). This is the structural signature of Tool
+    Shadowing attempting to expand attack surface across server boundaries.
+    Cross-check against Rule 1 (keyword scan) and Rule 3 (hash drift).
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: PT5H
+    matchingMethod: AllEntities
+    groupByEntities: []
+    groupByAlertDetails: []
+    groupByCustomDetails:
+      - ServerName
+      - ToolName
+      - ReferencedServer
+      - ReferencedTool
+eventGroupingSettings:
+  aggregationKind: SingleAlert
+suppressionDuration: PT1H
+suppressionEnabled: false
+version: 1.0.0
+kind: Scheduled

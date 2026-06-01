@@ -93,6 +93,14 @@ The detections operate on the protocol-event stream the MCP host already generat
 
 The remaining four rules address the most exploitable variants of Tool Shadowing on the available telemetry. The DAILY_LOG (Day 5) documents the full reduction reasoning.
 
+### Logic App playbook (scoped out)
+
+The Project Plan called for a Logic App playbook for Rule 1 providing three capabilities: auto-tagging the incident, pulling the poisoned description into incident comments, and a HITL approval gate for the server-disable response action.
+
+After reviewing the project plan against this pack's stated intention — to demonstrate KQL detection of Tool Shadowing at the protocol level — the Logic App was scoped out. It provides response automation (triage workflow, incident enrichment, gated server disable) rather than detection. Response automation is a separate capability from protocol-level detection.
+
+The Logic App belongs in a follow-up project on detection-response automation, not in this pack's scope.
+
 ### V1/V2 calendar_sync versions
 
 The malicious calendar_sync server existed in two versions in the captured data (V1: dramatic `<IMPORTANT>` payload, V2: subtler "routing configuration" framing). The detection pack verifies against both.

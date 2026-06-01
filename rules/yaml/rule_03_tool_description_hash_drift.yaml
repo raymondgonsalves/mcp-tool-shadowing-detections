@@ -1,0 +1,100 @@
+id: 7c4f2a1e-3b8d-4e9f-a6c5-1d2e3f4a5b6c
+name: MCP Tool Description Hash Drift
+description: |
+  Detects a tool description whose hash differs from the approved baseline
+  recorded at install/approval time. This is the detection signature for the
+  rug-pull and sleeper attack variants of Tool Shadowing: a malicious MCP
+  server is approved with one description, then silently swaps in a different
+  description on a later session.
+
+  The hash change is the signal — regardless of whether the new content is
+  more or less malicious than the approved baseline. The rule is content-
+  agnostic; it compares only the SHA-256 hash, not the description text.
+
+  Threat Model Finding 4 — The One-Time Approval Gap: no MCP protocol
+  mechanism detects whether a tool description changes between sessions.
+  Hash drift detection is the compensating control that turns the one-time
+  install gate into continuous verification.
+
+  Watchlist dependency: MCPToolDescriptions (search key: ToolName). The
+  Notes column carries human-readable approval context including any
+  synthetic-baseline disclosures, surfaced inline in each alert.
+severity: Medium
+status: Available
+requiredDataConnectors:
+  - connectorId: AzureMonitor(CustomTable)
+    dataTypes:
+      - MCPProtocolLogs_CL
+queryFrequency: PT30M
+queryPeriod: PT30M
+triggerOperator: gt
+triggerThreshold: 0
+tactics:
+  - InitialAccess
+relevantTechniques:
+  - T1195
+tags:
+  - MCP
+  - ToolShadowing
+  - SupplyChain
+  - Integrity
+  - OWASP-ASI04
+query: |
+  let ApprovedDescriptions = _GetWatchlist("MCPToolDescriptions");
+  MCPProtocolLogs_CL
+  | where EventType == "ToolDescriptionLoaded"
+  | where isnotempty(ToolDescriptionHash)
+  | join kind=inner ApprovedDescriptions
+      on $left.ServerName == $right.ServerName
+      and $left.ToolName == $right.ToolName
+  | where ToolDescriptionHash != ApprovedHash
+  | project
+      EventTime,
+      SessionId,
+      HostApp,
+      ModelName,
+      ServerName,
+      ToolName,
+      ObservedHash = ToolDescriptionHash,
+      ApprovedHash,
+      Notes,
+      ToolDescription,
+      ToolDescriptionLength,
+      IngestionAgent
+  | order by EventTime desc
+customDetails:
+  ServerName: ServerName
+  ToolName: ToolName
+  ObservedHash: ObservedHash
+  ApprovedHash: ApprovedHash
+  Notes: Notes
+  ToolDescriptionLength: ToolDescriptionLength
+  SessionId: SessionId
+  HostApp: HostApp
+  ModelName: ModelName
+  IngestionAgent: IngestionAgent
+alertDetailsOverride:
+  alertDisplayNameFormat: "MCP tool description drift: {{ServerName}}/{{ToolName}}"
+  alertDescriptionFormat: |
+    Observed hash {{ObservedHash}} does not match approved hash {{ApprovedHash}}
+    for {{ServerName}}/{{ToolName}}. Review the watchlist Notes field for
+    approval context. Cross-check against Rule 1 (keyword scan) and Rule 2
+    (cross-tool reference) on the same event.
+incidentConfiguration:
+  createIncident: true
+  groupingConfiguration:
+    enabled: true
+    reopenClosedIncident: false
+    lookbackDuration: PT5H
+    matchingMethod: AllEntities
+    groupByEntities: []
+    groupByAlertDetails: []
+    groupByCustomDetails:
+      - ServerName
+      - ToolName
+eventGroupingSettings:
+  aggregationKind: SingleAlert
+suppressionDuration: PT1H
+suppressionEnabled: false
+version: 1.0.0
+kind: Scheduled

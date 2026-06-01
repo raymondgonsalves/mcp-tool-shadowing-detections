@@ -70,17 +70,15 @@ does not include.
 
 ## Scope Decisions
 
-Three rules from the original six-rule plan were dropped during the
-project. The dropped rules are documented here for honesty about scope.
+Two rules and one Logic App playbook from the original six-rule plan were scoped out during the project. The scoped-out items are documented here for honesty about scope.
 
-| Original rule | Status | Reason |
-|---------------|--------|--------|
-| Rule 5 — MCP host outbound anomaly | Dropped | Required DeviceProcessEvents / DeviceNetworkEvents data not available in this lab's data source. Would belong in a Defender-XDR-integrated detection pack, not a Sentinel-custom-table pack. |
-| Rule 6 — Audit log integrity check | Dropped | Required cross-source correlation between user-intent telemetry and protocol logs that the lab's single-source forwarder does not capture. |
+| Original deliverable | Status | Reason |
+|---------------------|--------|--------|
+| Rule 5 — MCP host outbound anomaly | Scoped out | Required DeviceProcessEvents / DeviceNetworkEvents data not available in this lab's data source. Would belong in a Defender-XDR-integrated detection pack, not a Sentinel-custom-table pack. |
+| Rule 6 — Audit log integrity check | Scoped out | Required cross-source correlation between user-intent telemetry and protocol logs that the lab's single-source forwarder does not capture. |
+| Logic App ARM/Bicep template | Scoped out | The Project Plan (Day 4, Section 7 Deliverables) called for a Logic App playbook for Rule 1 — auto-tag the incident, pull the poisoned description into incident comments, and provide a HITL approval gate for the server-disable response action. After reviewing the project plan against this pack's stated intention — to demonstrate KQL detection of Tool Shadowing at the protocol level — the Logic App was scoped out because it provides response automation (triage workflow, incident enrichment, gated server disable) rather than detection. Response automation is a separate capability from protocol-level detection. The Logic App belongs in a follow-up project on detection-response automation, not in this pack's scope. |
 
-The remaining four rules form a coherent set that addresses the most
-exploitable variants of Tool Shadowing on the available telemetry. See
-DAILY_LOG (Day 5) for the full scope-reduction reasoning.
+The remaining four rules form a coherent set that addresses the most exploitable variants of Tool Shadowing on the available telemetry. See DAILY_LOG (Day 5) for the full scope-reduction reasoning for Rules 5/6, and DAILY_LOG (Day 8) for the Logic App scope review.
 
 ---
 

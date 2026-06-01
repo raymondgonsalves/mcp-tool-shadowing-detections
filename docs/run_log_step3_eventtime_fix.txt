@@ -7,7 +7,7 @@ Transform:         source | extend TimeGenerated = todatetime(EventTime), EventT
 ==================================================================
 2026-05-19 09:20:13,435 main INFO Starting forwarder (LIVE RUN)...
 2026-05-19 09:20:13,438 ingestion_client INFO Running connection verification probe...
-2026-05-19 09:20:13,525 ingestion_client INFO Constructed LogsIngestionClient (endpoint=https://dce-mcp-detection-lab-prj9.eastus-1.ingest.monitor.azure.com)
+2026-05-19 09:20:13,525 ingestion_client INFO Constructed LogsIngestionClient (endpoint=https://dce-mcp-detection-lab-XXXX.eastus-1.ingest.monitor.azure.com)
 2026-05-19 09:20:14,144 ingestion_client INFO Uploaded batch of 1 rows
 2026-05-19 09:20:14,144 ingestion_client INFO Verification probe succeeded — auth and DCR wiring confirmed.
 2026-05-19 09:20:14,144 main INFO Processing source: /mnt/c/Users/gonsa/mcp-security-lab/evidence/mcp_protocol_evidence.log (parser=claude_desktop, host=ClaudeDesktop)
@@ -36,7 +36,7 @@ Transform:         source | extend TimeGenerated = todatetime(EventTime), EventT
 [CONFIG] Configuration loaded successfully.
 [CONFIG] Loaded 2 log sources.
 [CONFIG] Schema version: 1.1
-[CONFIG] DCE URL: https://dce-mcp-detection-lab-prj9.eastus-1.ingest.monitor.azure.com
+[CONFIG] DCE URL: https://dce-mcp-detection-lab-XXXX.eastus-1.ingest.monitor.azure.com
 [CONFIG] DCR Immutable ID: dcr-7366f726a9cf4162aa9be8c10a4bd8cd
 [CONFIG] Stream name: Custom-MCPProtocolLogs_CL
 [CONFIG] Dead-letter queue: /home/gonsalvr/dev/mcp-tool-shadowing-detections/failed-events

@@ -47,13 +47,13 @@ param location string = 'eastus'
 param dcrName string = 'dcr-mcp-detection-lab'
 
 @description('Resource ID of the Data Collection Endpoint the DCR is associated with.')
-param dataCollectionEndpointId string = '/subscriptions/5faad216-600c-4e82-aded-965522b51146/resourceGroups/rg-sentinel-mcp-detection-lab/providers/Microsoft.Insights/dataCollectionEndpoints/dce-mcp-detection-lab'
+param dataCollectionEndpointId string = '/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-sentinel-mcp-detection-lab/providers/Microsoft.Insights/dataCollectionEndpoints/dce-mcp-detection-lab'
 
 @description('Resource ID of the destination Log Analytics workspace.')
-param workspaceResourceId string = '/subscriptions/5faad216-600c-4e82-aded-965522b51146/resourceGroups/rg-sentinel-mcp-detection-lab/providers/Microsoft.OperationalInsights/workspaces/law-mcp-detection-lab'
+param workspaceResourceId string = '/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-sentinel-mcp-detection-lab/providers/Microsoft.OperationalInsights/workspaces/law-mcp-detection-lab'
 
 // Logical name for the Log Analytics destination, referenced by the dataFlow.
-var logAnalyticsDestinationName = 'd0f3187bec3542819cb652a34418236a'
+var logAnalyticsDestinationName = '00000000000000000000000000000000'
 
 resource dcr 'Microsoft.Insights/dataCollectionRules@2023-03-11' = {
   name: dcrName

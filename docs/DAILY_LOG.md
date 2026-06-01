@@ -2263,3 +2263,73 @@ leverage senior-engineer artifact, smallest scope). The README
 then builds on the traceability matrix's structure.
 
 ---
+
+## Day 8-9 — Polish Phase Wrap
+
+### Sessions and rhythm
+
+The polish phase landed across two calendar days (Day 8 = 2026-05-30, Day 9 = 2026-06-01) but functioned as one continuous push with a single sleep break between roughly 10:30 PM Day 8 and 4:41 AM Day 9. The natural break point was an unintended consequence of a long Day 8 — README v1 through v8 took most of Day 8's working hours.
+
+The pre-dawn Day 9 resumption produced the bulk of the remaining polish work: recruiter_brief (c779436), YAML wrappers + Logic App scope decision (f4bd29a), and pre-push sanitization (178a606). The GitHub remote push landed around 9:30 AM Day 9 after a breakfast break, completing the polish phase except for the final documentation drop captured in this entry.
+
+Sustainable focus across the polish phase held throughout — but the work was front-loaded with editorial decisions (README revisions, register correction on recruiter_brief, slick-phrase audits) and back-loaded with verification work (pre-push sanitization, four pre-push checks). Both phases benefit from different cognitive states; the natural break between them protected both.
+
+### What was accomplished
+
+Five commits landed during the polish phase, closing every documentation-tier deliverable except the video walkthrough:
+
+- **a0f10a9 — README + architecture diagram**: README went through 8 substantive revisions before commit. Architecture diagram added as `figure_00_architecture.png`. Embedded 5-column Master Traceability Table. Full documentation-tone rewrite removing editorial flourishes ("this matters because", "ties it all together", em-dashes for drama). Verbatim alignment to threat model phrasing preserved throughout ("single shared LLM context window", "no trust boundary", "embed instructions in its tool description that silently redirect the behavior of a trusted, high-privilege tool").
+
+- **c779436 — recruiter_brief.md**: 3-minute reading map for first-pass reviewers. Initial v1 over-corrected toward generalist tone; v2 leveled the register up after a "would a cybersecurity recruiter find this condescending?" pass. Calibrated to trust readers with security vocabulary (attack class, high-privilege tool, adversarial scenario, protocol-level defense) while explaining MCP-specific concepts (Model Context Protocol, Tool Shadowing, shared LLM context window). SC-200 named explicitly once in the brief — overrides the implicit pattern from the README because recruiters scan for cert alignment.
+
+- **f4bd29a — YAML wrappers + Logic App scope decision**: Four KQL detection rules packaged as Sentinel Analytics Rule YAML files in `rules/yaml/`, matching the format used in the Azure-Sentinel GitHub repository's Detections/ folders. Each YAML wraps the canonical .kql file byte-identical on the KQL query content. Per-rule severity/cadence/MITRE decisions documented in commit message. Logic App scope decision documented in both README and TRACEABILITY_MATRIX: scoped out because it provides response automation rather than detection, and response automation is a separate capability from protocol-level detection.
+
+- **178a606 — Sanitization of Azure identifiers**: Pre-push verification surfaced real Azure resource identifiers in four tracked files — subscription ID in two parameter defaults in `infra/dcr.bicep`, workspace ID stored undashed as the `logAnalyticsDestinationName` variable (which the standard GUID regex missed — caught on visual review), and DCE URL suffix in three forwarder run logs. All replaced with placeholders. Four files modified, nine line replacements, symmetric insertions and deletions.
+
+- **GitHub remote push (no commit, but the moment the project went public)**: `gh repo create` with --public, --description, --source=., --remote=origin, --push. 229 objects uploaded at 1.01 MiB. Repository live at https://github.com/raymondgonsalves/mcp-tool-shadowing-detections.
+
+### Key decisions
+
+**Two-tier documentation pattern**: README serves technical reviewers (SOC analysts, detection engineers, hiring managers with security background), recruiter_brief.md serves first-pass screeners (cybersecurity recruiters, generalist hiring managers). Different audiences answer different questions: README answers HOW (architecture, schema, rules, traceability); the brief answers WHAT and WHY (what was built, why it matters, what skills it demonstrates). Both reference the same architecture diagram and traceability content but at different depths.
+
+**Register calibration discipline**: The recruiter_brief v1 over-corrected toward a generalist audience ("the attack class is called Tool Shadowing", "calendars, email, file storage, internal databases"). Cybersecurity recruiters have baseline vocabulary and should be trusted with domain terms. v2 leveled up: dropped over-explaining introduction phrasing, used "adversarial scenarios" (security vocabulary) rather than "tools that turn malicious" (generalist vocabulary), tightened the first deliverable bullet to remove hedging language.
+
+**Slick-phrase audit on the README**: Removed "production-grade" (used three times), "defendable surface", "land" slang, "Detection-as-data discipline" (manufactured term), "senior-engineer signal" (performative framing). Replaced with plainer descriptive language. The principle: the project work and results should speak for themselves implicitly; editorial framing that performs importance is itself a signal of doubt about the substance.
+
+**Format-content match principle**: Each artifact's format fits the work it carries. Video for demonstrations (Mastering, Defending — both used recorded walkthroughs because the SOC agent's behavior was the substance). Written report for threat model analysis (Threat Model Report — the only written-report artifact in the arc because analytical depth was the substance). Code + figures + traceability documentation for detection engineering (this pack — because the substance is detection logic, evidence integrity, and architectural traceability). The video drop for this pack honors the format-content match: detection engineering is best demonstrated through artifacts the viewer can read and inspect, not video frames.
+
+**Logic App scoped out**: Project Plan called for a Logic App playbook for Rule 1 (auto-tag incident, pull poisoned description into comments, HITL approval gate for server-disable action). After reviewing the project plan against this pack's stated intention — to demonstrate KQL detection of Tool Shadowing at the protocol level — the Logic App was scoped out because it provides response automation rather than detection. Response automation is a separate capability from protocol-level detection. Belongs in a follow-up project on detection-response automation.
+
+**Video walkthrough scoped out**: Project Plan listed an optional 4-6 minute video walkthrough for YouTube continuity. After reviewing the pack's existing documentation surface against the marginal value a 4-6 minute video would add, the video was scoped out. The pack already provides substantive README, recruiter_brief, traceability matrix, nine canonical figures, and YAML wrappers — collectively carrying the same content a video would. Portfolio arc framing is carried by cross-references between artifacts and the Notion portfolio hub, not by video continuity. The video belongs as a follow-up if discovery channels favor video over text.
+
+### Process notes — closing the polish phase
+
+- The recurring discipline of verifying-before-acting paid out repeatedly across the polish phase. Catching the off-by-one in the TRACEABILITY_MATRIX intro ("Three rules" should have been "Two rules and one Logic App"). Catching the workspace ID stored without dashes that the standard GUID regex missed. Catching defensive language in scope-out documentation ("deliberate and careful review" sounded defensive; replaced with plain "after reviewing the project plan"). Catching real identifiers in a draft commit message that would have leaked the very values the sanitization was removing. Each catch was small individually; collectively they raised the quality of the polish-phase output.
+
+- Three explicit scope-out documentation entries landed this phase (Logic App, video walkthrough, plus the prior Rules 5/6 from Day 5). Each scope-out is documented with the reasoning rather than silently omitted.
+
+- The pre-push verification chain (.gitignore review → credential keyword grep → forwarder/CONFIG.py inspection → git ls-files full review → targeted identifier scans → diff review → final pre-commit grep) was time-consuming but caught real issues. The cost of finding-and-removing-before-push is much lower than the cost of discovering-after-push.
+
+- The GitHub remote push was a one-way door. Verifying the repo was clean before pushing protected against permanent disclosure that would have required force-pushing history to fix. This kind of pre-commit verification is the boring discipline that distinguishes "I shipped a portfolio piece" from "I shipped a portfolio piece I want recruiters to see."
+
+### Project state at close
+
+The pack is publicly available at https://github.com/raymondgonsalves/mcp-tool-shadowing-detections.
+
+Nine commits comprise the project's git history, in reverse chronological order: pre-push sanitization (178a606), YAML wrappers + Logic App scope (f4bd29a), recruiter_brief (c779436), README + architecture diagram (a0f10a9), TRACEABILITY_MATRIX (cae342c), nine canonical figures (958476b), Day 7 wrap (9300b14), Rule 3 (a5910ba), Rule 2 (ccb0808). Earlier commits sit beneath these and cover the forwarder, infrastructure-as-code, Rule 1, Rule 4, and watchlists.
+
+The pack delivers: four KQL detection rules in canonical .kql format + Sentinel Analytics Rule YAML wrappers, a substantive README with embedded architecture diagram and traceability table, a recruiter_brief calibrated for first-pass reviewers, a cross-cutting TRACEABILITY_MATRIX, nine canonical figures showing rules firing on real attack data, a Bicep infrastructure-as-code template for the Data Collection Rule, a working Python forwarder pipeline that ingests MCP protocol logs into the custom table, two watchlists (MCPToolNames, MCPToolDescriptions), and this full DAILY_LOG covering the project's nine-day arc.
+
+Three documented scope-out items honor scope discipline: Rules 5/6 (Day 5 — telemetry not available in the lab data source), Logic App ARM/Bicep template (Day 8-9 — response automation, not detection), and the video walkthrough (Day 8-9 — marginal value below the cost of producing it).
+
+### Next — distribution
+
+The pack exists publicly. Distribution to the portfolio audience is the next step beyond this DAILY_LOG entry: a LinkedIn post drafted to introduce the project to network and discovery channels, and an update to the Notion portfolio hub adding this project as Project 4 in the agentic AI security arc alongside Mastering, Defending, and the Threat Model Report.
+
+### Project journal close
+
+This DAILY_LOG entry closes the project journal. Nine days from a blank repo to a publicly visible Microsoft Sentinel detection pack covering a new agentic AI attack class, packaged as detection-as-code in the format used by Microsoft's own published detection content.
+
+Future portfolio updates to this repo — additional rules, follow-up projects, video walkthrough if produced later, deployment refinements — will land as their own work outside this journal's scope.
+
+---

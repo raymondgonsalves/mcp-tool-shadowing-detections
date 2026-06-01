@@ -101,6 +101,16 @@ After reviewing the project plan against this pack's stated intention — to dem
 
 The Logic App belongs in a follow-up project on detection-response automation, not in this pack's scope.
 
+### Video walkthrough (scoped out)
+
+The Project Plan listed an optional 4-6 minute video walkthrough for YouTube continuity with the prior two videos in the portfolio arc (Mastering SOC Agentic AI and Defending Agentic AI).
+
+The video was scoped out after reviewing the pack's existing documentation surface against the marginal value a 4-6 minute video would add. The pack already provides a substantive README with embedded architecture diagram, a recruiter_brief calibrated for first-pass reviewers, a cross-cutting traceability matrix, nine canonical figures showing rules firing on real attack data, and YAML wrappers for production deployment. A video would add presentation polish and YouTube continuity but no substantive content the existing artifacts do not already carry.
+
+The portfolio arc framing is established in the README, recruiter_brief, and Notion portfolio hub. Arc continuity does not require a video for this project; it is carried by the cross-references between artifacts.
+
+The video belongs as a follow-up artifact if discovery channels favor video over text, not in this pack's scope.
+
 ### V1/V2 calendar_sync versions
 
 The malicious calendar_sync server existed in two versions in the captured data (V1: dramatic `<IMPORTANT>` payload, V2: subtler "routing configuration" framing). The detection pack verifies against both.

@@ -92,15 +92,14 @@ incidentConfiguration:
     enabled: true
     reopenClosedIncident: false
     lookbackDuration: PT5H
-    matchingMethod: AllEntities
+    matchingMethod: Selected          # was AllEntities — Sprint 0 grouping fix (Finding 1): AllEntities ignored groupByCustomDetails and collapsed all alerts into one incident
     groupByEntities: []
     groupByAlertDetails: []
-    groupByCustomDetails:
+    groupByCustomDetails:             # was [SessionId, Recipient] — narrowed to SessionId for one incident per session consumed by the triage pipeline
       - SessionId
-      - Recipient
 eventGroupingSettings:
   aggregationKind: SingleAlert
 suppressionDuration: PT1H
 suppressionEnabled: false
-version: 1.0.0
+version: 1.1.0
 kind: Scheduled

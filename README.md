@@ -41,6 +41,27 @@ This project produces KQL detection rules for Microsoft Sentinel that catch the 
 - Threat-model-to-detection traceability with V1/V2 attack-variant coverage verified on captured data
 - Forensic evidence integrity: SHA-256 baselined logs, non-destructive forwarder verified
 - Rule headers documenting classification, threat model mapping, known limitations, and triage steps in each rule file
+- Live deployment as Microsoft Sentinel Scheduled analytics rules (v1.1.0), including per-session incident grouping and a Data Collection Rule transform for replay-driven detection
+
+---
+
+## Deployment Status
+
+All four rules are deployed as **live Microsoft Sentinel Scheduled analytics rules** (v1.1.0) in the lab workspace `law-mcp-detection-lab`. Each rule raises one incident per MCP session.
+
+| Rule | Severity | Schedule | Incident grouping |
+|------|----------|----------|-------------------|
+| 1 — Poisoned Tool Description | High | 15 min | per session (`SessionId`) |
+| 2 — Cross-Tool Reference | High | 15 min | per session (`SessionId`) |
+| 3 — Tool Description Hash Drift | Medium | 30 min | per session (`SessionId`) |
+| 4 — Original Recipient Tell | High | 5 min | per session (`SessionId`) |
+
+Two deployment details worth noting:
+
+- **Per-session incident grouping (v1.1.0).** The rules group alerts into incidents by `SessionId` (Sentinel `matchingMethod: Selected`), so one MCP session produces one investigable incident rather than a sprawl of per-event alerts. This is the unit a downstream response pipeline consumes.
+- **Ingestion-time stamping for replay.** The Data Collection Rule stamps `TimeGenerated` at ingestion time, while the true event-occurrence time is preserved in the `EventTime` column. This lets replayed historical evidence fall within the rules' scheduled lookback windows so the live rules evaluate it.
+
+The execution-layer rule (Rule 4) has been confirmed against captured attack data: it returns the model-compliance rows where the redirect actually fired (recipient rewritten to the attacker address, "Original recipient:" tell present) and is silent on the model that refused at ingestion — the model-dependent-defense result, visible in the detection data itself.
 
 ---
 
@@ -99,7 +120,7 @@ The Project Plan called for a Logic App playbook for Rule 1 providing three capa
 
 After reviewing the project plan against this pack's stated intention — to demonstrate KQL detection of Tool Shadowing at the protocol level — the Logic App was scoped out. It provides response automation (triage workflow, incident enrichment, gated server disable) rather than detection. Response automation is a separate capability from protocol-level detection.
 
-The Logic App belongs in a follow-up project on detection-response automation, not in this pack's scope.
+The Logic App belongs in a follow-up project on detection-response automation, not in this pack's scope. That follow-up is now underway as the *respond* phase of the portfolio arc — a SOC automation pipeline that triages and responds to the incidents these rules raise.
 
 ### Video walkthrough (scoped out)
 
@@ -194,10 +215,11 @@ Rule 3's approved baseline for calendar_sync is synthetic. The lab's calendar_sy
 mcp-tool-shadowing-detections/
 ├── README.md                          (this file)
 ├── rules/
-│   ├── rule_01_poisoned_tool_description.kql
+│   ├── rule_01_poisoned_tool_description.kql   (bare query)
 │   ├── rule_02_cross_tool_reference.kql
 │   ├── rule_03_tool_description_hash_drift.kql
-│   └── rule_04_original_recipient_tell.kql
+│   ├── rule_04_original_recipient_tell.kql
+│   └── yaml/                                    (deployable analytics-rule wrappers, v1.1.0)
 ├── watchlists/
 │   ├── mcp_tool_names.csv              (Rule 2 reference data)
 │   └── mcp_tool_descriptions.csv       (Rule 3 approved baselines)
@@ -236,22 +258,30 @@ mcp-tool-shadowing-detections/
    - `MCPToolDescriptions` (search key: `ToolName`, includes Notes column for approval context)
 4. Configure the forwarder with your DCE URI and DCR Immutable ID
 5. Run the forwarder against your captured MCP protocol logs to populate the table
-6. Deploy the rules by pasting the `.kql` files into Sentinel as scheduled analytics rules
+6. Deploy the rules as Scheduled analytics rules. The deployable definitions are the YAML wrappers in `rules/yaml/` (v1.1.0), which carry the query, custom-detail mappings, alert formatting, and per-session incident grouping (`matchingMethod: Selected`, grouped by `SessionId`). The bare `.kql` files in `rules/` are the queries alone.
 
-The rules are written in plain KQL — no special functions, no proprietary syntax. They run on any Sentinel workspace with the required schema.
+The rules are written in plain KQL — no special functions, no proprietary syntax. They run on any Sentinel workspace with the required schema. Note two Sentinel platform constraints encountered when deploying: custom-detail keys are capped at 20 characters (so `ToolDescriptionLength` is surfaced as `ToolDescLength`), and alert display/description overrides accept at most three `{{column}}` placeholders each.
 
 ---
 
 ## Demo Flow
 
+The rules are deployed as live Scheduled analytics rules, so the end-to-end demonstration is replay-driven: re-running the forwarder against the captured evidence ingests events with current `TimeGenerated`, the live rules evaluate them on schedule, and matching sessions raise incidents (one incident per `SessionId`).
+
 To see the pack working end-to-end against the lab data:
 
 1. Verify evidence integrity (Figure 1 in this README): the SHA-256 baseline of the source logs is unchanged since capture
 2. Confirm pipeline: the forwarder loads events into `MCPProtocolLogs_CL`
-3. Run Rule 1 (keyword scan): fires on V1 (18 events), silent on V2 — demonstrates the Obfuscation Gap
-4. Run Rule 2 (cross-tool reference): fires on V1 and V2 (24 events total) — content-agnostic detection
-5. Run Rule 3 (hash drift): fires on V2 (6 events) as drift from the synthetic V1 baseline
-6. Run Rule 4 (recipient tell): fires on the V2 attack at execution time, zero false positives on Claude refusals
+3. The live rules evaluate the ingested events and raise incidents grouped by session
+
+The per-rule detection behavior, validated on the captured data, is:
+
+| Rule | Behavior on captured data |
+|------|---------------------------|
+| Rule 1 (keyword scan) | Fires on V1 (18 events), silent on V2 — demonstrates the Obfuscation Gap |
+| Rule 2 (cross-tool reference) | Fires on V1 and V2 (24 events total) — content-agnostic detection |
+| Rule 3 (hash drift) | Fires on V2 (6 events) as drift from the synthetic V1 baseline |
+| Rule 4 (recipient tell) | Fires on the attack at execution time; zero false positives on the model that refused |
 
 The DAILY_LOG documents each rule's verification step by step. The traceability matrix maps every detection back to its threat-model finding.
 

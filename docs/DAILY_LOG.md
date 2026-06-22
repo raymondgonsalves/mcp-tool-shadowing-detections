@@ -2333,3 +2333,29 @@ This DAILY_LOG entry closes the project journal. Nine days from a blank repo to 
 Future portfolio updates to this repo — additional rules, follow-up projects, video walkthrough if produced later, deployment refinements — will land as their own work outside this journal's scope.
 
 ---
+
+---
+
+## 2026-06-22 — Rules deployed live as Scheduled analytics rules (v1.1.0) + DCR timestamp fix
+
+**Context:** earlier work validated these four detections as KQL in the Logs blade but never instantiated them as live Scheduled analytics rules in Sentinel (Analytics showed 0 active rules). All four are now deployed live.
+
+**Deployed (all v1.1.0 grouping):**
+- Rule 1 Poisoned Tool Description — High, 15/15
+- Rule 2 Cross-Tool Reference — High, 15/15 (watchlist: MCPToolNames)
+- Rule 3 Hash Drift — Medium, 30/30 (watchlist: MCPToolDescriptions)
+- Rule 4 Recipient Tell — High, 5/5
+- All: matchingMethod Selected + groupByCustomDetails [SessionId], SingleAlert, no entity mappings.
+
+**Grouping fix (v1.1.0, commit `deadc95`):** changed from `AllEntities` (which, with no entity mappings, collapsed all alerts into one incident) to `Selected` + `SessionId`, giving one incident per session.
+
+**Rule 4 validated against ground truth:** fires on the llama3.2/ollmcp execution rows (Recipient = attacker@pwnd.com; "Original recipient:" tell present). Correctly silent on Claude (refused at ingestion). Confirms the model-dependent-defense thesis in the detection data.
+
+**Platform constraints encountered during deployment:**
+- Custom-detail keys cap at 20 chars: `ToolDescriptionLength` -> `ToolDescLength` (value still maps to full column).
+- Alert override fields cap at 3 `{{column}}` placeholders: trimmed Rule 2 / Rule 3 description formats.
+- Rule wizard inline validator false-positive underlines on watchlist join-suffixed columns (e.g. `ToolName1`); query valid in Logs blade.
+
+**DCR timestamp fix:** the DCR transform stamped `TimeGenerated = todatetime(EventTime)`, which would prevent scheduled rules from firing on replayed historical data (out of the 5-30 min window). Changed to `TimeGenerated = now()`; `EventTime` now carries event-occurrence time. TimeGenerated is henceforth ingestion time.
+
+**Next:** replay (re-run forwarder) so rows ingest with current TimeGenerated; verify rules fire and group one-incident-per-session.
